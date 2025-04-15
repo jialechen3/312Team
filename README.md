@@ -1,7 +1,8 @@
 # Team project
 
 In this project we will focus on implementing a mini mmo game.
-Framework to be user----------Flask
+
+Framework to be use----------Flask
 Database            ----------MongoDB
 Network             ----------WebSockets
 
