@@ -1,18 +1,17 @@
-# Team project
+# 🕹️ Mini MMO Game (Team Project)
 
-In this project we will focus on implementing a mini mmo game.
+This project is a **mini multiplayer online game** built with:
 
-Framework to be use----------Flask
-Database            ----------MongoDB
-Network             ----------WebSockets
+- **Framework**: Flask  
+- **Database**: MongoDB  
+- **Networking**: WebSockets (via Flask-SocketIO)
 
+---
 
+## 🚀 Getting Started
 
-#To Contribute
-1.use -git checkout -B yourname/action to create a branch
-2.create a pull request and invites all members as reiviewers
-3.push to main
+### ▶️ Run the App
 
-#To run the app
-pip install -r requirements.txt
-python app.py
+```bash
+docker compose build
+docker compose up
