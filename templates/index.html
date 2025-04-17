@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>MMO Game</title>
+    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+</head>
+<body>
+    <h1>Hello World from MMO Game!</h1>
+    <p id="server-response">Waiting for response...</p>
+    <input id="msg" type="text" placeholder="Type a message">
+    <button onclick="sendMessage()">Send</button>
+
+    <ul id="chat-log"></ul>
+
+    <script>
+        // Basic fetch API
+        fetch('/api/hello')
+            .then(res => res.text())
+            .then(text => {
+                document.getElementById('server-response').textContent = text;
+            });
+
+        // Socket.IO connection
+        const socket = io();
+
+        socket.on('connect', () => {
+            console.log('Connected to WebSocket server');
+        });
+
+        socket.on('message', (msg) => {
+            const log = document.getElementById('chat-log');
+            const li = document.createElement('li');
+            li.textContent = msg;
+            log.appendChild(li);
+        });
+
+        function sendMessage() {
+            const msg = document.getElementById('msg').value;
+            socket.send(msg);
+        }
+    </script>
+</body>
+</html>
