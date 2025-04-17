@@ -12,3 +12,7 @@ Network             ----------WebSockets
 1.use -git checkout -B yourname/action to create a branch
 2.create a pull request and invites all members as reiviewers
 3.push to main
+
+#To run the app
+pip install -r requirements.txt
+python app.py
