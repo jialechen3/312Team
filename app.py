@@ -1,14 +1,18 @@
 from flask import Flask, render_template
 from flask_socketio import SocketIO, send
+from pymongo import MongoClient
 import eventlet
 eventlet.monkey_patch()
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'  # Replace with a secure key in production
 socketio = SocketIO(app)
+mongo_client = MongoClient("mongodb://mongo:27017/")
+db = mongo_client["mmo_game"]
+users_collection = db["users"]
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('login.html')
 
 @app.route('/api/hello')
 def hello():
