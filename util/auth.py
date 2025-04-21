@@ -52,13 +52,12 @@ def login():
 
     dbEntry = user_collection.find_one({'username': user})
     if not dbEntry:
-        return "Incorrect username", 400
+        return render_template("login.html", error="Incorrect username")
 
     if not bcrypt.checkpw(password.encode(), dbEntry["password"].encode()):
-        return "Incorrect password", 400
+        return render_template("login.html", error="Incorrect password")
 
     auth_token = str(uuid.uuid4())
-    hashed_token = hashlib.sha256(auth_token.encode()).hexdigest()
 
     resp = make_response(redirect("/lobby"))
     resp.set_cookie("auth_token", auth_token, httponly=True, max_age=3600)

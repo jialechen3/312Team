@@ -4,10 +4,9 @@ from flask import Flask, render_template
 from flask_socketio import SocketIO, send, emit, join_room
 from util.auth import auth_bp
 from util.database import user_collection
-
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'secret!'  # Replace with a secure key in production
 socketio = SocketIO(app, async_mode='threading')
+app.config['SECRET_KEY'] = 'secret!'  # Replace with a secure key in production
 
 
 app.register_blueprint(auth_bp)
@@ -49,4 +48,4 @@ def handle_join_room(room_name):
     emit('message', f"A new player joined room '{room_name}'", room=room_name)
 
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=8080)
+    socketio.run(app, host='0.0.0.0', port=8080, allow_unsafe_werkzeug=True)

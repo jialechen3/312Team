@@ -79,17 +79,32 @@
     .login-box a:hover {
       text-decoration: underline;
     }
+    .error-message {
+      background-color: #ff4c4c;
+      color: white;
+      padding: 10px;
+      margin-bottom: 15px;
+      border-radius: 6px;
+      font-size: 14px;
+    }
   </style>
 </head>
 <body>
-  <div class="login-box">
-    <h1>Enter the Arena</h1>
-    <form action="/login" method="POST">
-      <input type="text" name="username" placeholder="Username" required>
-      <input type="password" name="password" placeholder="Password" required>
-      <button type="submit">Login</button>
-    </form>
-    <p>New here? <a href="/register">Join the battle</a></p>
-  </div>
+<div class="login-box">
+  <h1>Enter the Arena</h1>
+
+  {% if error %}
+    <div class="error-message">{{ error }}</div>
+  {% endif %}
+
+  <form action="/login" method="POST">
+    <input type="text" name="username" placeholder="Username" required>
+    <input type="password" name="password" placeholder="Password" required>
+    <button type="submit">Login</button>
+  </form>
+
+  <p>New here? <a href="/register">Join the battle</a></p>
+</div>
 </body>
 </html>
+
