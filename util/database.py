@@ -13,5 +13,4 @@ else:
 # Access the database and collections
 db = mongo_client["mmo_game"]
 user_collection = db["users"]
-authToken_collection = db["auth_tokens"]
 chat_collection = db["chat"]
