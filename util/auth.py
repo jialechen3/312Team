@@ -1,12 +1,12 @@
 import re
 
-from flask import Flask, render_template, Blueprint
+from flask import Flask, render_template, Blueprint, redirect
 
 from flask import request,make_response
 import uuid
 import bcrypt
 import hashlib
-from util.database import user_collection, authToken_collection
+from util.database import user_collection
 auth_bp = Blueprint('auth', __name__)
 
 @auth_bp.route('/register', methods=['GET', 'POST'])
@@ -35,7 +35,7 @@ def register():
         "password": hashed_pw
     })
 
-    resp = make_response("Registered successfully")
+    resp = make_response(redirect("/"))
     resp.set_cookie("session", user_id)
     return resp
 
@@ -59,9 +59,8 @@ def login():
 
     auth_token = str(uuid.uuid4())
     hashed_token = hashlib.sha256(auth_token.encode()).hexdigest()
-    authToken_collection.insert_one({"username": user, "auth_token": hashed_token})
 
-    resp = make_response("Successful Log In")
+    resp = make_response(redirect("/lobby"))
     resp.set_cookie("auth_token", auth_token, httponly=True, max_age=3600)
     return resp
 
@@ -69,9 +68,7 @@ def login():
 @auth_bp.route('/logout', methods=['POST'])
 def logout():
     auth_token = request.cookies.get("auth_token")
-    if auth_token:
-        hashed_token = hashlib.sha256(auth_token.encode()).hexdigest()
-        authToken_collection.delete_one({"auth_token": hashed_token})
+
 
     resp = make_response("Logged out")
     resp.set_cookie("auth_token", '', expires=0)
