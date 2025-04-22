@@ -1,7 +1,7 @@
 import re
 
 from flask import Flask, render_template, Blueprint, redirect
-
+from flask import request, g
 from flask import request,make_response
 import uuid
 import bcrypt
@@ -32,7 +32,8 @@ def register():
     user_collection.insert_one({
         "id": user_id,
         "username": user,
-        "password": hashed_pw
+        "password": hashed_pw,
+        "auth_token": None       # placeholder for session token
     })
 
     resp = make_response(redirect("/"))
@@ -57,19 +58,24 @@ def login():
     if not bcrypt.checkpw(password.encode(), dbEntry["password"].encode()):
         return render_template("login.html", error="Incorrect password")
 
-    auth_token = str(uuid.uuid4())
+    token = str(uuid.uuid4())
+
+    hashed = hash_token(token)
+    user_collection.update_one({"username": user}, {"$set": {"auth_token": hashed}})
 
     resp = make_response(redirect("/lobby"))
-    resp.set_cookie("auth_token", auth_token, httponly=True, max_age=3600)
+    resp.set_cookie("auth_token", token, httponly=True, max_age=3600)
     return resp
-
 
 @auth_bp.route('/logout', methods=['POST'])
 def logout():
-    auth_token = request.cookies.get("auth_token")
+    token = request.cookies.get("auth_token")
+
+    if token :
+        user_collection.update_one({"auth_token": hash_token(token)}, {"$unset" : {"auth_token": ""}})
 
 
-    resp = make_response("Logged out")
+    resp = make_response(redirect("/"))
     resp.set_cookie("auth_token", '', expires=0)
     return resp
 
@@ -83,3 +89,18 @@ def validate_password(string):
     if not re.search(r'[!@#$%^&()\-_=]', string): return False
     if not re.fullmatch(r'[A-Za-z0-9!@#$%^&()\-_=]+', string): return False
     return True
+
+# hash auth token for DB storage
+def hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+@auth_bp.before_app_request
+def load_CurrentUser():
+
+    token = request.cookies.get("auth_token")
+
+    if token:
+        g.user = user_collection.find_one({"auth_token": hash_token(token)})
+    else:
+        g.user = None
