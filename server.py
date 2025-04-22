@@ -1,5 +1,7 @@
-
-
+import os
+import logging
+from datetime import datetime
+from flask import request
 from flask import Flask, render_template
 from flask_socketio import SocketIO, send, emit, join_room
 from util.auth import auth_bp
@@ -8,6 +10,25 @@ app = Flask(__name__)
 socketio = SocketIO(app, async_mode='threading')
 app.config['SECRET_KEY'] = 'secret!'  # Replace with a secure key in production
 
+# Setup logging directory
+if not os.path.exists('logs'):
+    os.makedirs('logs')
+
+# Configure logging
+logging.basicConfig(
+    filename='logs/server.log',
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+# Define log handler
+def log_request_info():
+    ip = request.remote_addr
+    method = request.method
+    path = request.path
+    logging.info(f"{ip} - {method} {path}")
+app.before_request(log_request_info)
 
 app.register_blueprint(auth_bp)
 @app.route('/')

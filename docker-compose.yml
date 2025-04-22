@@ -6,6 +6,7 @@ services:
       - "8080:8080"
     volumes:
       - .:/app
+      - ./logs:/mmogame/logs
     environment:
       - FLASK_RUN_PORT=8080
       - DOCKER_DB=true
