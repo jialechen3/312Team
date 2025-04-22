@@ -1,13 +1,25 @@
+<<<<<<< add-logging
 import os
 import logging
 from datetime import datetime
 from flask import request
+=======
+>>>>>>> main
 from flask import Flask, render_template
 from flask_socketio import SocketIO, send, emit, join_room
 from util.auth import auth_bp
+
 from util.database import user_collection
 app = Flask(__name__)
 socketio = SocketIO(app, async_mode='threading')
+
+from flask import g
+
+@app.context_processor
+def inject_user():
+    # now every template rendered via app will get current_user
+    return dict(current_user=g.user)
+
 app.config['SECRET_KEY'] = 'secret!'  # Replace with a secure key in production
 
 # Setup logging directory
