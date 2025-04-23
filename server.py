@@ -1,15 +1,15 @@
-<<<<<<< add-logging
+import hashlib
 import os
 import logging
-from datetime import datetime
-from flask import request
-=======
->>>>>>> main
+import uuid
+from flask import request, jsonify
+import bcrypt
 from flask import Flask, render_template
-from flask_socketio import SocketIO, send, emit, join_room
-from util.auth import auth_bp
+from flask_socketio import SocketIO, emit, join_room
+from util.auth import auth_bp, hash_token
 
-from util.database import user_collection
+from util.database import user_collection, room_collection
+
 app = Flask(__name__)
 socketio = SocketIO(app, async_mode='threading')
 
@@ -45,7 +45,6 @@ app.before_request(log_request_info)
 app.register_blueprint(auth_bp)
 @app.route('/')
 def index():
-    user_collection.insert_one({"name": "Jiale Test"})
     return render_template('login.html')
 
 
@@ -62,23 +61,80 @@ rooms = set()  # in-memory; you can later store in MongoDB
 @socketio.on('connect')
 def handle_connect():
     print('Client connected')
-    emit('room_list', list(rooms))
+    rooms = [r['name'] for r in room_collection.find()]
+    emit('room_list', rooms)
 
 @socketio.on('get_rooms')
 def handle_get_rooms():
-    emit('room_list', list(rooms))
+    emit('room_list', [{'id': r['id'], 'name': r['name']} for r in room_collection.find()])
+
 
 @socketio.on('create_room')
 def handle_create_room(room_name):
-    rooms.add(room_name)
-    print(f'Room created: {room_name}')
-    emit('room_list', list(rooms), broadcast=True)
+    existing = room_collection.find_one({'name': room_name})
+    if not existing:
+        room_id = str(uuid.uuid4())
+        room_collection.insert_one({'id': room_id, 'name': room_name, 'players': []})
+    emit('room_list', [{'id': r['id'], 'name': r['name']} for r in room_collection.find()], broadcast=True)
 
 @socketio.on('join_room')
-def handle_join_room(room_name):
-    join_room(room_name)
-    print(f'Client joined room: {room_name}')
-    emit('message', f"A new player joined room '{room_name}'", room=room_name)
+def handle_join_room(data):
+    room_id = data.get('roomId') or data.get('room')
+    player_id = data['player']
+
+    room = room_collection.find_one({'id': room_id})
+    if not room:
+        emit('error', {'message': 'Room not found'}, to=request.sid)
+        return
+
+    room_name = room['name']
+    join_room(room_id)
+
+    room_collection.update_one(
+        {'id': room_id},
+        {'$addToSet': {'players': {'id': player_id, 'x': 0, 'y': 0}}}
+    )
+
+    emit('message', f"{player_id} joined {room_name}", room=room_id)
+    emit('player_joined', {'player': player_id}, to=request.sid)
+
+
+@socketio.on('move')
+def handle_move(data):
+    room_id = data.get('roomId') or data.get('room')
+    player = data['player']
+    new_x = data['x']
+    new_y = data['y']
+
+    room_collection.update_one(
+        {'id': room_id, 'players.id': player},
+        {'$set': {'players.$.x': new_x, 'players.$.y': new_y}}
+    )
+
+    updated_room = room_collection.find_one({'id': room_id})
+    if not updated_room:
+        print(f"[ERROR] Room with id '{room_id}' not found")
+        return
+
+    emit('player_positions', updated_room['players'], room=room_id)
+
+@app.route('/battlefield')
+def battlefield():
+    return render_template('battlefield.html')
+
+
+
+@app.route('/api/whoami')
+def whoami():
+    token = request.cookies.get('auth_token')
+    hashed_token = hashlib.sha256(token.encode()).hexdigest()
+
+    user = user_collection.find_one({'auth_token': hashed_token})
+    if user:
+        return jsonify({'username': user['username']})
+    return jsonify({'username': None})
+
+
 
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=8080, allow_unsafe_werkzeug=True)
+    socketio.run(app, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
