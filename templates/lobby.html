@@ -119,7 +119,7 @@
 
     function joinRoom(roomName) {
       socket.emit('join_room', roomName);
-      alert(`Joined room: ${roomName}`);
+      window.location.href = `/lobby/${roomName}`;
       // You can redirect to a game page here if needed
     }
   </script>
