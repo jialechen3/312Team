@@ -1,10 +1,7 @@
-<<<<<<< add-logging
 import os
 import logging
 from datetime import datetime
 from flask import request
-=======
->>>>>>> main
 from flask import Flask, render_template
 from flask_socketio import SocketIO, send, emit, join_room
 from util.auth import auth_bp
@@ -48,7 +45,6 @@ def index():
     user_collection.insert_one({"name": "Jiale Test"})
     return render_template('login.html')
 
-
 @app.route('/api/hello')
 def hello():
     return 'Hello from the MMO backend!'
@@ -56,6 +52,12 @@ def hello():
 @app.route('/lobby')
 def lobby():
     return render_template('lobby.html')
+
+@app.route('/lobby/<lobby_id>')
+def lobby_by_id(lobby_id):
+    team1 = ['Alice', 'Bob']
+    team2 = ['Charlie', 'Dana']
+    return render_template('lobby_by_id.html', lobby_id=lobby_id, team1_players=team1, team2_players=team2)
 
 rooms = set()  # in-memory; you can later store in MongoDB
 
