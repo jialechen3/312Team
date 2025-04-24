@@ -96,7 +96,7 @@
     const socket = io();
 
     socket.on('connect', () => {
-      socket.emit('get_rooms');
+      socket.emit('page_ready', { page: 'create_lobby' });
     });
 
     socket.on('room_list', (rooms) => {

@@ -4,7 +4,7 @@ from datetime import datetime
 from flask import request
 from flask import Flask, render_template
 from flask_socketio import SocketIO, send, emit, join_room
-from util.auth import auth_bp
+from util.auth import auth_bp, hash_token
 
 from util.database import user_collection
 app = Flask(__name__)
@@ -55,16 +55,44 @@ def lobby():
 
 @app.route('/lobby/<lobby_id>')
 def lobby_by_id(lobby_id):
-    team1 = ['Alice', 'Bob']
-    team2 = ['Charlie', 'Dana']
-    return render_template('lobby_by_id.html', lobby_id=lobby_id, team1_players=team1, team2_players=team2)
+    return render_template('lobby_by_id.html', lobby_id=lobby_id)
 
 rooms = set()  # in-memory; you can later store in MongoDB
+red_team = set()  # Im following the same way rooms are made for now in-memory; will need to save in DB to specify which lobbies team were joining -- Aaron
+blue_team = set()  # Im following the same way rooms are made for now in-memory; will need to save in DB to specify which lobbies team were joining -- Aaron
+no_team = set()  # Im following the same way rooms are made for now in-memory; will need to save in DB to specify which lobbies team were joining -- Aaron
 
 @socketio.on('connect')
 def handle_connect():
     print('Client connected')
-    emit('room_list', list(rooms))
+
+@socketio.on('page_ready')
+def handle_page_ready(data):
+    page = data.get('page')
+    if page == 'create_lobby':
+        emit('room_list', list(rooms))
+    elif page == 'team_select':
+        red_team.add('shun')
+        red_team.add('wei')
+        blue_team.add('nadia')
+        blue_team.add('tess')
+        no_team.add('aaron')
+        no_team.add('jiale')
+        #adding user to no team
+        auth_token = request.cookies.get('auth_token')
+        if auth_token:
+            user = user_collection.find_one({'auth_token': hash_token(auth_token)})
+            if user:
+                username = user['username']
+                no_team.add(username)
+            else:
+                print(f'User does not exist')
+        else:
+            print(f'Not logged in')
+
+        emit('team_red_list', list(red_team))
+        emit('team_blue_list', list(blue_team))
+        emit('no_team_list', list(no_team))
 
 @socketio.on('get_rooms')
 def handle_get_rooms():
@@ -81,6 +109,26 @@ def handle_join_room(room_name):
     join_room(room_name)
     print(f'Client joined room: {room_name}')
     emit('message', f"A new player joined room '{room_name}'", room=room_name)
+
+######## Lobby WS #########
+
+@socketio.on('connect_lobby')
+def handle_connect_lobby():
+    print('Client connected to lobby')
+
+    emit('team_red_list', list(red_team))
+    emit('team_blue_list', list(blue_team))
+    emit('no_team_list', list(no_team))
+
+@socketio.on('get_teams')
+def handle_get_teams():
+    emit('team_red_list', list(red_team))
+    emit('team_blue_list', list(blue_team))
+    emit('no_team_list', list(no_team))
+
+'''@socketio.on('join_team')
+def handle_join_team(team):
+'''
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=8080, allow_unsafe_werkzeug=True)

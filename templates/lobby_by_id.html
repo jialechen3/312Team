@@ -69,7 +69,7 @@
     .team-container {
             display: flex;
             flex-direction: row;
-            justify-content: space-evenly
+            justify-content: space-evenly;
             padding: 40px;
             gap: 20px;
     }
@@ -107,21 +107,61 @@
     <h1 style="text-align:center;">{{ lobby_id }}</h1>
     <div class="team-container">
         <div class="team">
-            <h2>Team 1</h2>
-                <button style="background-color: red; color: white;" onclick="createRoom()">Join Team</button>
-            {% for player in team1_players %}
-                <div class="player">{{ player }}</div>
-            {% endfor %}
+            <h2>Team Red</h2>
+                <button style="background-color: red; color: white;" onclick="joinTeam('red')">Join Team</button>
+            <ul id="redPlayerList"></ul>
         </div>
 
     <div class="team">
-        <h2>Team 2</h2>
+        <h2>No Team</h2>
+            <ul id="noPlayerList"></ul>
+        </div>
+
+    <div class="team">
+        <h2>Team Blue</h2>
             <button style="background-color: blue; color: white;" onclick="createRoom()">Join Team</button>
-        {% for player in team2_players %}
-            <div class="player">{{ player }}</div>
-        {% endfor %}
+        <ul id="bluePlayerList"></ul>
         </div>
     </div>
     <button style="background-color: white; color: black;" onclick="createRoom()">Start Game</button>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+  <script>
+    const socket = io();
+
+    socket.on('connect', () => {
+      socket.emit('page_ready', { page: 'team_select' });
+    });
+
+    socket.on('team_red_list', (red_team) => {
+      const redPlayerList = document.getElementById('redPlayerList');
+      redPlayerList.innerHTML = '';
+      red_team.forEach(red_player => {
+        const li = document.createElement('li');
+        li.innerHTML = red_player;
+        redPlayerList.appendChild(li);
+      });
+    });
+
+    socket.on('team_blue_list', (blue_team) => {
+      const bluePlayerList = document.getElementById('bluePlayerList');
+      bluePlayerList.innerHTML = '';
+      blue_team.forEach(blue_player => {
+        const li = document.createElement('li');
+        li.innerHTML = blue_player;
+        bluePlayerList.appendChild(li);
+      });
+    });
+
+    socket.on('no_team_list', (no_team) => {
+      const noPlayerList = document.getElementById('noPlayerList');
+      noPlayerList.innerHTML = '';
+      no_team.forEach(player => {
+        const li = document.createElement('li');
+        li.innerHTML = player;
+        noPlayerList.appendChild(li);
+      });
+    });
+
+ </script>
 </body>
 </html>
