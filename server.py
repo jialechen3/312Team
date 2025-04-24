@@ -66,5 +66,43 @@ def lobby_by_id(lobby_id):
 
 
 
+@socketio.on('move')
+def handle_move(data):
+    room_id = data.get('roomId') or data.get('room')
+    player = data['player']
+    new_x = data['x']
+    new_y = data['y']
+
+    room_collection.update_one(
+        {'id': room_id, 'players.id': player},
+        {'$set': {'players.$.x': new_x, 'players.$.y': new_y}}
+    )
+
+    updated_room = room_collection.find_one({'id': room_id})
+    if not updated_room:
+        print(f"[ERROR] Room with id '{room_id}' not found")
+        return
+
+    emit('player_positions', updated_room['players'], room=room_id)
+
+@app.route('/battlefield')
+def battlefield():
+    return render_template('battlefield.html')
+
+
+
+@app.route('/api/whoami')
+def whoami():
+    token = request.cookies.get('auth_token')
+    hashed_token = hashlib.sha256(token.encode()).hexdigest()
+
+    user = user_collection.find_one({'auth_token': hashed_token})
+    if user:
+        return jsonify({'username': user['username']})
+    return jsonify({'username': None})
+
+
+
+
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=8080, allow_unsafe_werkzeug=True, debug=True)

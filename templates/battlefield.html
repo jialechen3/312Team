@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Battlefield</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: url('/static/images/tag_battle_bg.png') no-repeat center -530px fixed;
+      background-size: cover;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      cursor: crosshair;
+    }
+
+
+    canvas {
+      background: #1e1e2f;
+      border-radius: 12px;
+      box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
+    }
+  </style>
+</head>
+<body>
+<canvas id="game" width="1000" height="800"></canvas>
+
+<script src="https://cdn.socket.io/3.1.3/socket.io.min.js"></script>
+<script>
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const socket = io();
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const roomId = urlParams.get('room');
+  if (!roomId) {
+    alert("Room ID is missing in the URL.");
+    throw new Error("Room ID not found");
+  }
+
+  const TILE_SIZE = 40;
+  const MAP_WIDTH = 100;  // Number of horizontal tiles
+  const MAP_HEIGHT = 100;
+
+  const terrain = Array.from({ length: MAP_HEIGHT }, (_, y) =>
+  Array.from({ length: MAP_WIDTH }, (_, x) => {
+    // 🟥 Team Red (3) enclosure in top-right 5x5
+    if (y < 5 && x >= MAP_WIDTH - 5) {
+      const insideX = x >= MAP_WIDTH - 4 && x <= MAP_WIDTH - 2;
+      const insideY = y >= 1 && y <= 3;
+      if (insideX && insideY) return 0; // empty inside
+      return 3; // border
+    }
+
+    // 🔵 Team Blue (2) bottom-left 5x5 full zone (can change to border later)
+    if (y >= MAP_HEIGHT - 5 && x < 5) return 2;
+
+    // ⬜ Walls scattered
+    if ((x + y) % 17 === 0 && x > 5 && x < MAP_WIDTH - 6 && y > 5 && y < MAP_HEIGHT - 6) return 1;
+
+    return 0; // empty
+  })
+);
+  let playerId = null;
+  let players = {};
+  let pos = { x: 0, y: 0 };
+
+  // Fetch username and start the game
+  fetch('/api/whoami', {
+    credentials: 'include'
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (data.username) {
+        playerId = data.username;
+        joinGame();
+      } else {
+        alert("Not authenticated");
+        window.location.href = "/login";
+      }
+    });
+
+  function joinGame() {
+    socket.emit('join_room', { roomId, player: playerId });
+
+    socket.on('player_positions', (playerList) => {
+      players = {};
+      playerList.forEach(p => {
+        players[p.id] = { x: p.x, y: p.y };
+      });
+      draw();
+    });
+
+    document.addEventListener('keydown', handleMovement);
+    draw(); // Initial draw
+  }
+
+  function handleMovement(e) {
+    if (e.key === "ArrowUp") pos.y--;
+    if (e.key === "ArrowDown") pos.y++;
+    if (e.key === "ArrowLeft") pos.x--;
+    if (e.key === "ArrowRight") pos.x++;
+
+    pos.x = Math.max(0, Math.min(pos.x, MAP_WIDTH - 1));
+    pos.y = Math.max(0, Math.min(pos.y, MAP_HEIGHT - 1));
+
+    socket.emit('move', {
+      roomId: roomId,
+      player: playerId,
+      x: pos.x,
+      y: pos.y
+    });
+  }
+
+  function drawGrid(viewX, viewY) {
+    const cols = Math.ceil(canvas.width / TILE_SIZE);
+    const rows = Math.ceil(canvas.height / TILE_SIZE);
+
+    for (let x = 0; x < cols; x++) {
+      for (let y = 0; y < rows; y++) {
+        const worldX = Math.floor(viewX + x);
+        const worldY = Math.floor(viewY + y);
+
+        if (worldX < MAP_WIDTH && worldY < MAP_HEIGHT) {
+          const tileType = terrain[worldY][worldX];
+
+          // Color based on terrain type
+          switch (tileType) {
+            case 1: ctx.fillStyle = 'gray'; break;        // Wall
+            case 2: ctx.fillStyle = 'blue'; break;        // Team 1 spawn
+            case 3: ctx.fillStyle = 'red'; break;         // Team 2 spawn
+            default: ctx.fillStyle = '#1e1e2f';           // Empty
+          }
+
+          ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+
+          // Optional: draw a grid outline
+          ctx.strokeStyle = '#222';
+          ctx.strokeRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        }
+      }
+    }
+  }
+
+  function drawPlayers(viewX, viewY) {
+    Object.keys(players).forEach((id) => {
+      const { x, y } = players[id];
+
+      // Only draw players in the visible viewport
+      if (
+        x >= viewX && x < viewX + canvas.width / TILE_SIZE &&
+        y >= viewY && y < viewY + canvas.height / TILE_SIZE
+      ) {
+        const screenX = (x - viewX) * TILE_SIZE;
+        const screenY = (y - viewY) * TILE_SIZE;
+
+        ctx.fillStyle = id === playerId ? 'lime' : 'red';
+        ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
+
+        ctx.fillStyle = 'white';
+        ctx.fillText(id, screenX + 5, screenY + 15);
+      }
+    });
+  }
+
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Calculate top-left of the viewport (centered on player)
+    const tilesInViewX = canvas.width / TILE_SIZE;
+    const tilesInViewY = canvas.height / TILE_SIZE;
+
+    let viewX = pos.x - Math.floor(tilesInViewX / 2);
+    let viewY = pos.y - Math.floor(tilesInViewY / 2);
+
+    // Clamp the camera so it doesn't show outside the world
+    viewX = Math.max(0, Math.min(viewX, MAP_WIDTH - tilesInViewX));
+    viewY = Math.max(0, Math.min(viewY, MAP_HEIGHT - tilesInViewY));
+
+    drawGrid(viewX, viewY);
+    drawPlayers(viewX, viewY);
+  }
+</script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 import re
 
-from flask import Flask, render_template, Blueprint, redirect
+from flask import Flask, render_template, Blueprint, redirect, jsonify
 from flask import request, g
 from flask import request,make_response
 import uuid
@@ -99,8 +99,9 @@ def hash_token(token: str) -> str:
 def load_CurrentUser():
 
     token = request.cookies.get("auth_token")
-
     if token:
         g.user = user_collection.find_one({"auth_token": hash_token(token)})
     else:
         g.user = None
+
+
