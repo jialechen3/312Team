@@ -35,9 +35,9 @@ def register_room_handlers(socketio, user_collection, room_collection):
         emit('room_list', all_rooms)
 
     @socketio.on('join_room')
-    def handle_join_room(room_name):
-        join_room(room_name)
-        emit('message', f"A new player joined room '{room_name}'", room=room_name)
+    def handle_join_room(data):
+        room_id = data.get('room_id')  # or 'roomId' depending on your frontend
+        join_room(room_id)
 
     @socketio.on('page_ready')
     def handle_page_ready(data):
@@ -111,3 +111,34 @@ def register_room_handlers(socketio, user_collection, room_collection):
         emit('team_red_list', updated["red_team"])
         emit('team_blue_list', updated["blue_team"])
         emit('no_team_list', updated["no_team"])
+        emit('joined_team', {'room_id': room_id, 'team': team}, to=request.sid)
+
+    @socketio.on('start_game')
+    def handle_start_game(data):
+        room_id = data.get('room_id')
+        player = data.get('player')
+        print('Room id', room_id)
+        print('Player list', player)
+        if not room_id or not player:
+            print("[ERROR] Missing room_id or player in start_game")
+            return
+
+        room = room_collection.find_one({'id': room_id})
+        if not room:
+            print(f"[ERROR] Room '{room_id}' not found")
+            return
+
+        # Check if player already exists
+        player_exists = any(p['id'] == player for p in room.get('players', []))
+        if not player_exists:
+            room_collection.update_one(
+                {'id': room_id},
+                {'$push': {'players': {'id': player, 'x': 0, 'y': 0}}}  # default center
+            )
+
+        join_room(room_id)  # ensure socket joins the room
+
+        updated = room_collection.find_one({'id': room_id})
+        print("[DEBUG] Emitting player_positions:", updated['players'])
+        emit('player_positions', updated['players'], room=room_id)
+

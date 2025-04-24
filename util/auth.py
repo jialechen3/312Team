@@ -105,3 +105,15 @@ def load_CurrentUser():
         g.user = None
 
 
+@auth_bp.route('/api/whoami')
+def whoami():
+    token = request.cookies.get("auth_token")
+    if not token:
+        return jsonify({"username": None})
+
+    user = user_collection.find_one({"auth_token": hash_token(token)})
+    if user:
+        return jsonify({"username": user["username"]})
+
+    return jsonify({"username": None})
+

@@ -120,7 +120,7 @@
     }
 
     function joinRoom(roomId) {
-      socket.emit('join_room', roomId);
+      socket.emit('join_room', { room_id: roomId });
       window.location.href = `/lobby/${roomId}`;
     }
   </script>
