@@ -114,50 +114,97 @@
 
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <script>
-      const socket = io();
-      const roomId = window.location.pathname.split("/").pop();
+            let playerId = null;
 
-      socket.on('connect', () => {
-        socket.emit('page_ready', { page: 'team_select', room_id: roomId });
-      });
+  const socket = io();
+  const roomId = window.location.pathname.split("/").pop();
+  let myTeam = null;  // Track which team the current user has joined
 
-      socket.on('team_red_list', (red_team) => {
-        const redPlayerList = document.getElementById('redPlayerList');
-        redPlayerList.innerHTML = '';
-        red_team.forEach(player => {
-          const li = document.createElement('li');
-          li.innerHTML = player;
-          redPlayerList.appendChild(li);
+  socket.on('connect', () => {
+    socket.emit('page_ready', { page: 'team_select', room_id: roomId });
+  });
+
+  socket.on('team_red_list', (red_team) => {
+    const redPlayerList = document.getElementById('redPlayerList');
+    redPlayerList.innerHTML = '';
+    red_team.forEach(player => {
+      const li = document.createElement('li');
+      li.innerHTML = player;
+      redPlayerList.appendChild(li);
+    });
+  });
+
+  socket.on('team_blue_list', (blue_team) => {
+    const bluePlayerList = document.getElementById('bluePlayerList');
+    bluePlayerList.innerHTML = '';
+    blue_team.forEach(player => {
+      const li = document.createElement('li');
+      li.innerHTML = player;
+      bluePlayerList.appendChild(li);
+    });
+  });
+
+  socket.on('no_team_list', (no_team) => {
+    const noPlayerList = document.getElementById('noPlayerList');
+    noPlayerList.innerHTML = '';
+    no_team.forEach(player => {
+      const li = document.createElement('li');
+      li.innerHTML = player;
+      noPlayerList.appendChild(li);
+    });
+  });
+
+  // When player successfully joins a team, store their team
+  socket.on('joined_team', ({ room_id, team }) => {
+    if (room_id === roomId) {
+      myTeam = team;
+    }
+  });
+
+  function joinTeam(team) {
+    socket.emit('join_team', { team: team, room_id: roomId });
+  }
+
+function placeholder() {
+  if (!myTeam) {
+    alert("You must join a team before starting the game.");
+    return;
+  }
+
+  fetch('/api/whoami', {
+    credentials: 'include'
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (data.username) {
+        playerId = data.username;
+
+        console.log("Starting game with:", { room_id: roomId, player: playerId });
+
+        // Emit only after playerId is available
+        socket.emit('start_game', {
+          room_id: roomId,
+          player: playerId
         });
-      });
 
-      socket.on('team_blue_list', (blue_team) => {
-        const bluePlayerList = document.getElementById('bluePlayerList');
-        bluePlayerList.innerHTML = '';
-        blue_team.forEach(player => {
-          const li = document.createElement('li');
-          li.innerHTML = player;
-          bluePlayerList.appendChild(li);
-        });
-      });
-
-      socket.on('no_team_list', (no_team) => {
-        const noPlayerList = document.getElementById('noPlayerList');
-        noPlayerList.innerHTML = '';
-        no_team.forEach(player => {
-          const li = document.createElement('li');
-          li.innerHTML = player;
-          noPlayerList.appendChild(li);
-        });
-      });
-
-      function joinTeam(team) {
-        socket.emit('join_team', { team: team, room_id: roomId });
+        // Redirect after a slight delay (optional)
+        setTimeout(() => {
+          window.location.href = `/battlefield?room=${roomId}`;
+        }, 300);
+      } else {
+        alert("You are not logged in.");
+        window.location.href = "/login";
       }
+    })
+    .catch(err => {
+      console.error("Error fetching username:", err);
+      alert("Failed to start the game. Please try again.");
+    });
+}
 
-      function placeholder() {
-        alert("Game would start now.");
-      }
-    </script>
+
+
+</script>
+
 </body>
 </html>

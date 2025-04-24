@@ -1,10 +1,12 @@
+import hashlib
 import os
 import logging
 from datetime import datetime
-from flask import request
+from flask import request, jsonify, Blueprint
 from flask import Flask, render_template
 from flask_socketio import SocketIO, send, emit, join_room
 from util.auth import auth_bp, hash_token
+from util.battlefield import battlefield_bp, register_battlefield_handlers
 
 from util.database import user_collection, room_collection
 from util.rooms import register_room_handlers
@@ -43,15 +45,12 @@ app.before_request(log_request_info)
 
 app.register_blueprint(auth_bp)
 register_room_handlers(socketio, user_collection, room_collection)
+register_battlefield_handlers(socketio, user_collection, room_collection)
 
 @app.route('/')
 def index():
-    user_collection.insert_one({"name": "Jiale Test"})
     return render_template('login.html')
 
-@app.route('/api/hello')
-def hello():
-    return 'Hello from the MMO backend!'
 
 @app.route('/lobby')
 def lobby():
@@ -63,6 +62,14 @@ def lobby_by_id(lobby_id):
     if not room:
         return "Room not found", 404
     return render_template('lobby_by_id.html', lobby_id=lobby_id, room_name=room["room_name"])
+
+
+
+
+app.register_blueprint(battlefield_bp)
+
+
+
 
 
 

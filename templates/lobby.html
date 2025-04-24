@@ -6,7 +6,8 @@
   <style>
     body {
       font-family: 'Segoe UI', sans-serif;
-      background: #1e1e2f;
+      background: url('/static/images/tag_battle_bg.png') no-repeat center -530px fixed;
+      background-size: cover;
       color: #fff;
       padding: 40px;
       margin: 0;
@@ -16,15 +17,16 @@
       text-align: center;
       margin-bottom: 30px;
       font-size: 2.5rem;
+      text-shadow: 2px 2px 6px #000;
     }
 
     .container {
       max-width: 600px;
       margin: 0 auto;
-      background-color: #2a2a40;
+      background-color: rgba(42, 42, 64, 0.85);
       padding: 20px;
       border-radius: 12px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.3);
+      box-shadow: 0 0 10px rgba(0,0,0,0.5);
     }
 
     #roomName {
@@ -118,7 +120,7 @@
     }
 
     function joinRoom(roomId) {
-      socket.emit('join_room', roomId);
+      socket.emit('join_room', { room_id: roomId });
       window.location.href = `/lobby/${roomId}`;
     }
   </script>
