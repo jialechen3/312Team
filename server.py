@@ -112,23 +112,38 @@ def handle_join_room(room_name):
 
 ######## Lobby WS #########
 
-@socketio.on('connect_lobby')
-def handle_connect_lobby():
-    print('Client connected to lobby')
-
-    emit('team_red_list', list(red_team))
-    emit('team_blue_list', list(blue_team))
-    emit('no_team_list', list(no_team))
-
 @socketio.on('get_teams')
 def handle_get_teams():
     emit('team_red_list', list(red_team))
     emit('team_blue_list', list(blue_team))
     emit('no_team_list', list(no_team))
 
-'''@socketio.on('join_team')
+@socketio.on('join_team')
 def handle_join_team(team):
-'''
+    auth_token = request.cookies.get('auth_token')
+    if auth_token:
+        user = user_collection.find_one({'auth_token': hash_token(auth_token)})
+        if user:
+            username = user['username']
+            no_team.discard(username)
+            red_team.discard(username)
+            blue_team.discard(username)
+
+            if team == 'red':
+                red_team.add(username)
+            elif team == 'blue':
+                blue_team.add(username)
+            else:
+                print(f'Invalid team: {team}')
+
+            emit('team_red_list', list(red_team))
+            emit('team_blue_list', list(blue_team))
+            emit('no_team_list', list(no_team))
+        else:
+            print(f'User does not exist; somthing is wrong in join team')
+    else:
+        print(f'Not logged in; somthing is wrong in join team')
+
 
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=8080, allow_unsafe_werkzeug=True)
+    socketio.run(app, host='0.0.0.0', port=8080, allow_unsafe_werkzeug=True, debug=True)

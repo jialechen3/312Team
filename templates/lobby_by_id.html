@@ -93,17 +93,11 @@
 <body>
     {% if current_user %}
     <div style="text-align:right; padding: 0 20px;">
-      <span>{{ current_user.username }}!</span>
-      <form action="{{ url_for('auth.logout') }}" method="post" style="display:inline">
-        <button type="submit">Logout</button>
-      </form>
+      <span>{{ current_user.username }}</span>
+      <a href="{{ url_for('lobby') }}">
+        <button type="button">Back to Lobby</button>
+      </a>
     </div>
-    {% else %}
-    <div style="text-align:right; padding: 0 20px;">
-      <a href="{{ url_for('auth.login') }}">Login</a> |
-      <a href="{{ url_for('auth.register') }}">Register</a>
-    </div>
-  {% endif %}
     <h1 style="text-align:center;">{{ lobby_id }}</h1>
     <div class="team-container">
         <div class="team">
@@ -119,11 +113,18 @@
 
     <div class="team">
         <h2>Team Blue</h2>
-            <button style="background-color: blue; color: white;" onclick="createRoom()">Join Team</button>
+            <button style="background-color: blue; color: white;" onclick="joinTeam('blue')">Join Team</button>
         <ul id="bluePlayerList"></ul>
         </div>
     </div>
-    <button style="background-color: white; color: black;" onclick="createRoom()">Start Game</button>
+    <button style="background-color: white; color: black;" onclick="placeholder()">Start Game</button>
+    {% else %}
+    <div style="text-align:right; padding: 0 20px;">
+      <a href="{{ url_for('auth.login') }}">Login</a> |
+      <a href="{{ url_for('auth.register') }}">Register</a>
+    </div>
+  {% endif %}
+
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
   <script>
     const socket = io();
@@ -162,6 +163,13 @@
       });
     });
 
+    function joinTeam(team) {
+      socket.emit('join_team', team);
+    }
+
+    function placeholder() {
+      alert("Game would start now.");
+    }
  </script>
 </body>
 </html>
