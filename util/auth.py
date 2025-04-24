@@ -1,5 +1,5 @@
 import re
-
+import os
 from flask import Flask, render_template, Blueprint, redirect
 from flask import request, g
 from flask import request,make_response
@@ -7,6 +7,8 @@ import uuid
 import bcrypt
 import hashlib
 from util.database import user_collection
+from flask import current_app, render_template, request, redirect, url_for, g
+from werkzeug.utils import secure_filename
 auth_bp = Blueprint('auth', __name__)
 
 @auth_bp.route('/register', methods=['GET', 'POST'])
@@ -104,3 +106,31 @@ def load_CurrentUser():
         g.user = user_collection.find_one({"auth_token": hash_token(token)})
     else:
         g.user = None
+ALLOWED_EXT = {'png','jpg','jpeg'}
+def allowed_file(fn):
+    return '.' in fn and fn.rsplit('.',1)[1].lower() in ALLOWED_EXT
+
+@auth_bp.route('/profile', methods=['GET','POST'])
+def profile():
+    # ensure logged in
+    if not getattr(g, 'user', None):
+        return redirect(url_for('auth.login'))
+
+    user = g.user
+
+    if request.method == 'POST':
+        file = request.files.get('avatar')
+        if file and allowed_file(file.filename):
+            ext      = secure_filename(file.filename).rsplit('.',1)[1].lower()
+            filename = f"{user['username']}.{ext}"
+            out_path = os.path.join(current_app.root_path, 'static', 'avatars', filename)
+            file.save(out_path)
+            # update Mongo
+            user_collection.update_one(
+                {'username': user['username']},
+                {'$set': {'avatar': filename}}
+            )
+        return redirect(url_for('auth.profile'))
+
+    # GET — render form
+    return render_template('profile.html')
