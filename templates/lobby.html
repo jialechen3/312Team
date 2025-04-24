@@ -104,7 +104,7 @@
       roomList.innerHTML = '';
       rooms.forEach(room => {
         const li = document.createElement('li');
-        li.innerHTML = `<span>${room}</span> <button onclick="joinRoom('${room}')">Join</button>`;
+        li.innerHTML = `<span>${room.name}</span> <button onclick="joinRoom('${room.id}')">Join</button>`;
         roomList.appendChild(li);
       });
     });
@@ -117,10 +117,9 @@
       }
     }
 
-    function joinRoom(roomName) {
-      socket.emit('join_room', roomName);
-      window.location.href = `/lobby/${roomName}`;
-      // You can redirect to a game page here if needed
+    function joinRoom(roomId) {
+      socket.emit('join_room', roomId);
+      window.location.href = `/lobby/${roomId}`;
     }
   </script>
 </body>

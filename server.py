@@ -6,7 +6,9 @@ from flask import Flask, render_template
 from flask_socketio import SocketIO, send, emit, join_room
 from util.auth import auth_bp, hash_token
 
-from util.database import user_collection
+from util.database import user_collection, room_collection
+from util.rooms import register_room_handlers
+
 app = Flask(__name__)
 socketio = SocketIO(app, async_mode='threading')
 
@@ -40,6 +42,8 @@ def log_request_info():
 app.before_request(log_request_info)
 
 app.register_blueprint(auth_bp)
+register_room_handlers(socketio, user_collection, room_collection)
+
 @app.route('/')
 def index():
     user_collection.insert_one({"name": "Jiale Test"})
@@ -55,94 +59,11 @@ def lobby():
 
 @app.route('/lobby/<lobby_id>')
 def lobby_by_id(lobby_id):
-    return render_template('lobby_by_id.html', lobby_id=lobby_id)
+    room = room_collection.find_one({"id": lobby_id})
+    if not room:
+        return "Room not found", 404
+    return render_template('lobby_by_id.html', lobby_id=lobby_id, room_name=room["room_name"])
 
-rooms = set()  # in-memory; you can later store in MongoDB
-red_team = set()  # Im following the same way rooms are made for now in-memory; will need to save in DB to specify which lobbies team were joining -- Aaron
-blue_team = set()  # Im following the same way rooms are made for now in-memory; will need to save in DB to specify which lobbies team were joining -- Aaron
-no_team = set()  # Im following the same way rooms are made for now in-memory; will need to save in DB to specify which lobbies team were joining -- Aaron
-
-@socketio.on('connect')
-def handle_connect():
-    print('Client connected')
-
-@socketio.on('page_ready')
-def handle_page_ready(data):
-    page = data.get('page')
-    if page == 'create_lobby':
-        emit('room_list', list(rooms))
-    elif page == 'team_select':
-        red_team.add('shun')
-        red_team.add('wei')
-        blue_team.add('nadia')
-        blue_team.add('tess')
-        no_team.add('aaron')
-        no_team.add('jiale')
-        #adding user to no team
-        auth_token = request.cookies.get('auth_token')
-        if auth_token:
-            user = user_collection.find_one({'auth_token': hash_token(auth_token)})
-            if user:
-                username = user['username']
-                no_team.add(username)
-            else:
-                print(f'User does not exist')
-        else:
-            print(f'Not logged in')
-
-        emit('team_red_list', list(red_team))
-        emit('team_blue_list', list(blue_team))
-        emit('no_team_list', list(no_team))
-
-@socketio.on('get_rooms')
-def handle_get_rooms():
-    emit('room_list', list(rooms))
-
-@socketio.on('create_room')
-def handle_create_room(room_name):
-    rooms.add(room_name)
-    print(f'Room created: {room_name}')
-    emit('room_list', list(rooms), broadcast=True)
-
-@socketio.on('join_room')
-def handle_join_room(room_name):
-    join_room(room_name)
-    print(f'Client joined room: {room_name}')
-    emit('message', f"A new player joined room '{room_name}'", room=room_name)
-
-######## Lobby WS #########
-
-@socketio.on('get_teams')
-def handle_get_teams():
-    emit('team_red_list', list(red_team))
-    emit('team_blue_list', list(blue_team))
-    emit('no_team_list', list(no_team))
-
-@socketio.on('join_team')
-def handle_join_team(team):
-    auth_token = request.cookies.get('auth_token')
-    if auth_token:
-        user = user_collection.find_one({'auth_token': hash_token(auth_token)})
-        if user:
-            username = user['username']
-            no_team.discard(username)
-            red_team.discard(username)
-            blue_team.discard(username)
-
-            if team == 'red':
-                red_team.add(username)
-            elif team == 'blue':
-                blue_team.add(username)
-            else:
-                print(f'Invalid team: {team}')
-
-            emit('team_red_list', list(red_team))
-            emit('team_blue_list', list(blue_team))
-            emit('no_team_list', list(no_team))
-        else:
-            print(f'User does not exist; somthing is wrong in join team')
-    else:
-        print(f'Not logged in; somthing is wrong in join team')
 
 
 if __name__ == '__main__':
