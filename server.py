@@ -4,9 +4,11 @@ from datetime import datetime
 from flask import request
 from flask import Flask, render_template
 from flask_socketio import SocketIO, send, emit, join_room
-from util.auth import auth_bp
+from util.auth import auth_bp, hash_token
 
-from util.database import user_collection
+from util.database import user_collection, room_collection
+from util.rooms import register_room_handlers
+
 app = Flask(__name__)
 socketio = SocketIO(app, async_mode='threading')
 
@@ -40,11 +42,12 @@ def log_request_info():
 app.before_request(log_request_info)
 
 app.register_blueprint(auth_bp)
+register_room_handlers(socketio, user_collection, room_collection)
+
 @app.route('/')
 def index():
     user_collection.insert_one({"name": "Jiale Test"})
     return render_template('login.html')
-
 
 @app.route('/api/hello')
 def hello():
@@ -54,28 +57,14 @@ def hello():
 def lobby():
     return render_template('lobby.html')
 
-rooms = set()  # in-memory; you can later store in MongoDB
+@app.route('/lobby/<lobby_id>')
+def lobby_by_id(lobby_id):
+    room = room_collection.find_one({"id": lobby_id})
+    if not room:
+        return "Room not found", 404
+    return render_template('lobby_by_id.html', lobby_id=lobby_id, room_name=room["room_name"])
 
-@socketio.on('connect')
-def handle_connect():
-    print('Client connected')
-    emit('room_list', list(rooms))
 
-@socketio.on('get_rooms')
-def handle_get_rooms():
-    emit('room_list', list(rooms))
-
-@socketio.on('create_room')
-def handle_create_room(room_name):
-    rooms.add(room_name)
-    print(f'Room created: {room_name}')
-    emit('room_list', list(rooms), broadcast=True)
-
-@socketio.on('join_room')
-def handle_join_room(room_name):
-    join_room(room_name)
-    print(f'Client joined room: {room_name}')
-    emit('message', f"A new player joined room '{room_name}'", room=room_name)
 
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=8080, allow_unsafe_werkzeug=True)
+    socketio.run(app, host='0.0.0.0', port=8080, allow_unsafe_werkzeug=True, debug=True)

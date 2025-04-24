@@ -14,3 +14,4 @@ else:
 db = mongo_client["mmo_game"]
 user_collection = db["users"]
 chat_collection = db["chat"]
+room_collection = db["rooms"]
