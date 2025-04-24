@@ -6,7 +6,8 @@
   <style>
     body {
       font-family: 'Segoe UI', sans-serif;
-      background: #1e1e2f;
+      background: url('/static/images/tag_battle_bg.png') no-repeat center -530px fixed;
+      background-size: cover;
       color: #fff;
       padding: 40px;
       margin: 0;
@@ -16,15 +17,16 @@
       text-align: center;
       margin-bottom: 30px;
       font-size: 2.5rem;
+      text-shadow: 2px 2px 6px #000;
     }
 
     .container {
       max-width: 600px;
       margin: 0 auto;
-      background-color: #2a2a40;
+      background-color: rgba(42, 42, 64, 0.85);
       padding: 20px;
       border-radius: 12px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.3);
+      box-shadow: 0 0 10px rgba(0,0,0,0.5);
     }
 
     #roomName {
@@ -99,18 +101,18 @@
       socket.emit('get_rooms');
     });
 
-socket.on('room_list', (rooms) => {
-  const roomList = document.getElementById('roomList');
-  roomList.innerHTML = '';
-  rooms.forEach(room => {
-    const li = document.createElement('li');
-    li.innerHTML = `
-      <span>${room.name}</span>
-      <button onclick="joinRoom('${room.id}')">Join</button>
-    `;
-    roomList.appendChild(li);
-  });
-});
+    socket.on('room_list', (rooms) => {
+      const roomList = document.getElementById('roomList');
+      roomList.innerHTML = '';
+      rooms.forEach(room => {
+        const li = document.createElement('li');
+        li.innerHTML = `
+          <span>${room.name}</span>
+          <button onclick="joinRoom('${room.id}')">Join</button>
+        `;
+        roomList.appendChild(li);
+      });
+    });
 
     function createRoom() {
       const roomName = document.getElementById('roomName').value.trim();
@@ -120,30 +122,29 @@ socket.on('room_list', (rooms) => {
       }
     }
 
-function joinRoom(roomId) {
-  fetch('/api/whoami', {
-  credentials: 'include'
-})
-    .then(res => res.json())
-    .then(data => {
-      if (!data.username) {
-        alert('You must be logged in to join a room.');
-        return;
-      }
+    function joinRoom(roomId) {
+      fetch('/api/whoami', {
+        credentials: 'include'
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (!data.username) {
+            alert('You must be logged in to join a room.');
+            return;
+          }
 
-      const player = data.username;
-      console.log('[CLIENT] Sending join_room', { roomId, player });
-      socket.emit('join_room', { roomId, player });
+          const player = data.username;
+          console.log('[CLIENT] Sending join_room', { roomId, player });
+          socket.emit('join_room', { roomId, player });
 
-      socket.once('player_joined', (data) => {
-        console.log('[CLIENT] Received player_joined:', data);
-        if (data.player === player) {
-          window.location.href = `/battlefield?room=${roomId}`;
-        }
-      });
-    });
-}
-
+          socket.once('player_joined', (data) => {
+            console.log('[CLIENT] Received player_joined:', data);
+            if (data.player === player) {
+              window.location.href = `/battlefield?room=${roomId}`;
+            }
+          });
+        });
+    }
   </script>
 </body>
 </html>
