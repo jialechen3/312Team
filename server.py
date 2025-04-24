@@ -1,10 +1,7 @@
-<<<<<<< add-logging
 import os
 import logging
 from datetime import datetime
 from flask import request
-=======
->>>>>>> main
 from flask import Flask, render_template
 from flask_socketio import SocketIO, send, emit, join_room
 from util.auth import auth_bp
