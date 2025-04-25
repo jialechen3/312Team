@@ -134,43 +134,57 @@
     <script>
             let playerId = null;
 
-  const socket = io();
-  const roomId = window.location.pathname.split("/").pop();
-  let myTeam = null;  // Track which team the current user has joined
+
+    const roomId = window.location.pathname.split("/").pop();
+    const socket = io({
+      query: {
+        page: 'team_select',
+        room_id: roomId  // optional, but helpful
+      }
+    });
+    let myTeam = null;  // Track which team the current user has joined
 
   socket.on('connect', () => {
+
     socket.emit('page_ready', { page: 'team_select', room_id: roomId });
   });
 
-  socket.on('team_red_list', (red_team) => {
-    const redPlayerList = document.getElementById('redPlayerList');
-    redPlayerList.innerHTML = '';
-    red_team.forEach(player => {
-      const li = document.createElement('li');
-      li.innerHTML = player;
-      redPlayerList.appendChild(li);
-    });
-  });
+  socket.on('team_red_list', (data) => {
 
-  socket.on('team_blue_list', (blue_team) => {
-    const bluePlayerList = document.getElementById('bluePlayerList');
-    bluePlayerList.innerHTML = '';
-    blue_team.forEach(player => {
-      const li = document.createElement('li');
-      li.innerHTML = player;
-      bluePlayerList.appendChild(li);
-    });
-  });
+  const redPlayerList = document.getElementById('redPlayerList');
+  redPlayerList.innerHTML = '';
 
-  socket.on('no_team_list', (no_team) => {
-    const noPlayerList = document.getElementById('noPlayerList');
-    noPlayerList.innerHTML = '';
-    no_team.forEach(player => {
-      const li = document.createElement('li');
-      li.innerHTML = player;
-      noPlayerList.appendChild(li);
-    });
+  (data || []).forEach(player => {
+    const li = document.createElement('li');
+    li.innerHTML = player;
+    redPlayerList.appendChild(li);
   });
+});
+
+  socket.on('team_blue_list', (data) => {
+
+  const bluePlayerList = document.getElementById('bluePlayerList');
+  bluePlayerList.innerHTML = '';
+
+  (data || []).forEach(player => {
+    const li = document.createElement('li');
+    li.innerHTML = player;
+    bluePlayerList.appendChild(li);
+  });
+});
+
+socket.on('no_team_list', (data) => {
+
+  const noPlayerList = document.getElementById('noPlayerList');
+  noPlayerList.innerHTML = '';
+
+  (data || []).forEach(player => {
+    const li = document.createElement('li');
+    li.innerHTML = player;
+    noPlayerList.appendChild(li);
+  });
+});
+
 
   // When player successfully joins a team, store their team
   socket.on('joined_team', ({ room_id, team }) => {
