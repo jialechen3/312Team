@@ -12,6 +12,7 @@
           margin: 0;
         }
 
+
         h1 {
           text-align: center;
           margin-bottom: 10px;
@@ -31,6 +32,13 @@
           padding: 20px;
           border-radius: 12px;
           box-shadow: 0 0 10px rgba(0,0,0,0.3);
+        }
+        .avatar-circle {
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          vertical-align: middle;
+          margin-right: 8px;
         }
 
         button {
@@ -74,12 +82,22 @@
 </head>
 <body>
     {% if current_user %}
-        <div style="text-align:right; padding: 0 20px;">
-          <span>{{ current_user.username }}</span>
-          <a href="{{ url_for('lobby') }}">
-            <button type="button">Back to Lobby</button>
-          </a>
-        </div>
+        <div style="text-align:right; padding:0 20px;">
+
+        <!-- AVATAR: add this line -->
+      <img
+        src="{{ url_for('static', filename='avatars/' + (current_user.avatar or 'default_red.jpg')) }}"
+        alt="Avatar"
+        class="avatar-circle"
+      >
+      <span>Welcome, {{ current_user.username }}!</span>
+      <a href="{{ url_for('auth.profile') }}">
+        <button type="button" style="margin-left:8px;">Profile</button>
+      </a>
+      <a href="{{ url_for('lobby') }}" style="margin-left:8px;">
+        <button type="button">Back to Lobby</button>
+      </a>
+    </div>
 
         <h1>Room: {{ room_name }}</h1>
 
