@@ -8,7 +8,7 @@ from bson import ObjectId
 connected_users = {}
 def register_room_handlers(socketio, user_collection, room_collection):
 
-    @socketio.on('create_room')
+    @socketio.on('create_room', namespace='/lobby')
     def handle_create_room(room_name):
         room_id = str(uuid.uuid4())  # generate unique ID
         new_room = {
@@ -27,7 +27,7 @@ def register_room_handlers(socketio, user_collection, room_collection):
         ]
         emit('room_list', all_rooms, broadcast=True)
 
-    @socketio.on('get_rooms')
+    @socketio.on('get_rooms', namespace='/lobby')
     def handle_get_rooms():
         all_rooms = [
             {"id": str(room["id"]), "name": room["room_name"]}
@@ -35,14 +35,13 @@ def register_room_handlers(socketio, user_collection, room_collection):
         ]
         emit('room_list', all_rooms)
 
-    @socketio.on('join_room')
+    @socketio.on('join_room', namespace='/lobby')
     def handle_join_room(data):
         room_id = data.get('room_id')  # or 'roomId' depending on your frontend
 
         join_room(room_id)
 
-
-    @socketio.on('page_ready')
+    @socketio.on('page_ready', namespace='/lobby')
     def handle_page_ready(data):
         room_id = data.get('room_id')
         page = data.get('page')
@@ -83,7 +82,7 @@ def register_room_handlers(socketio, user_collection, room_collection):
             emit('team_blue_list', updated["blue_team"], room=room_id)
             emit('no_team_list', updated["no_team"], room=room_id)
 
-    @socketio.on('join_team')
+    @socketio.on('join_team', namespace='/lobby')
     def handle_join_team(data):
         team = data.get('team')
         room_id = data.get('room_id')
@@ -134,12 +133,14 @@ def register_room_handlers(socketio, user_collection, room_collection):
         emit('no_team_list', updated["no_team"], room=room_id)
         emit('joined_team', {'room_id': room_id, 'team': team}, to=request.sid)
 
-    @socketio.on('start_game')
+    @socketio.on('start_game', namespace='/lobby')
     def handle_start_game(data):
         room_id = data.get('room_id')
         player = data.get('player')
+
         print('Room id', room_id)
-        print('Player list', player)
+        print('Player:', player)
+
         if not room_id or not player:
             print("[ERROR] Missing room_id or player in start_game")
             return
@@ -149,21 +150,55 @@ def register_room_handlers(socketio, user_collection, room_collection):
             print(f"[ERROR] Room '{room_id}' not found")
             return
 
-        # Check if player already exists
+        # ✅ Find the player's team
+        team = None
+        if player in room.get("red_team", []):
+            team = "red"
+        elif player in room.get("blue_team", []):
+            team = "blue"
+        elif player in room.get("no_team", []):
+            team = "no_team"
+
+        if not team:
+            print(f"[ERROR] Player {player} not found in any team")
+            team = "no_team"
+
+        # ✅ Set spawn position based on team
+        if team == "red":
+            spawn_x = 97
+            spawn_y = 2
+        elif team == "blue":
+            spawn_x = 2
+            spawn_y = 97
+        else:
+            spawn_x = 50
+            spawn_y = 50
+
+        # ✅ Check if player already exists inside players array
         player_exists = any(p['id'] == player for p in room.get('players', []))
+
         if not player_exists:
+            print(f"[START_GAME] Adding player {player} into battlefield players list")
             room_collection.update_one(
                 {'id': room_id},
-                {'$push': {'players': {'id': player, 'x': 0, 'y': 0}}}  # default center
+                {'$push': {'players': {
+                    'id': player,
+                    'x': spawn_x,
+                    'y': spawn_y,
+                    'team': team
+                }}}
             )
+        else:
+            print(f"[START_GAME] Player {player} already exists in battlefield players list")
 
-        join_room(room_id)  # ensure socket joins the room
+        # ✅ Important: ensure they JOIN the battlefield WebSocket room
+        join_room(room_id)
 
-        updated = room_collection.find_one({'id': room_id})
-        print("[DEBUG] Emitting player_positions:", updated['players'])
-        emit('player_positions', updated['players'], room=room_id)
+        # ✅ Emit updated players list
+        updated_room = room_collection.find_one({'id': room_id})
+        emit('player_positions', updated_room['players'], room=room_id)
 
-    @socketio.on('disconnect')
+    @socketio.on('disconnect', namespace='/lobby')
     def handle_disconnect():
         sid = request.sid
         username = connected_users.pop(sid, None)
@@ -204,7 +239,7 @@ def register_room_handlers(socketio, user_collection, room_collection):
 
         print(f"[DISCONNECT] {username} removed from all rooms.")
 
-    @socketio.on('connect')
+    @socketio.on('connect', namespace='/lobby')
     def handle_connect():
         page = request.args.get('page')
         room_id = request.args.get('room_id')

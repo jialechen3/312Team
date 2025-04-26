@@ -131,17 +131,19 @@
     {% endif %}
 
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+
     <script>
+
             let playerId = null;
 
 
     const roomId = window.location.pathname.split("/").pop();
-    const socket = io({
-      query: {
-        page: 'team_select',
-        room_id: roomId  // optional, but helpful
-      }
-    });
+   const socket = io('/lobby', {   // make sure connect to /lobby
+  query: {
+    page: 'team_select',
+    room_id: roomId
+  }
+});
     let myTeam = null;  // Track which team the current user has joined
 
   socket.on('connect', () => {
