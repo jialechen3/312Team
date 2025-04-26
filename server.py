@@ -7,7 +7,6 @@ from flask import Flask, render_template
 from flask_socketio import SocketIO, send, emit, join_room
 from util.auth import auth_bp, hash_token
 from util.battlefield import battlefield_bp, register_battlefield_handlers
-
 from util.database import user_collection, room_collection
 from util.rooms import register_room_handlers
 
