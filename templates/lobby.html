@@ -118,8 +118,9 @@
   </div>
 
   <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+
   <script>
-    const socket = io();
+    const socket = io('/lobby');
 
     socket.on('connect', () => {
       socket.emit('page_ready', { page: 'create_lobby' });
