@@ -27,7 +27,7 @@
   </style>
 </head>
 <body>
-<canvas id="game" width="1000" height="800"></canvas>
+<canvas id="game" width="1200" height="750"></canvas>
 
 <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 
@@ -111,6 +111,7 @@ socket.on('player_respawned', ({ playerId }) => {
   console.log(`[RESPAWN] ${playerId} is alive again`);
   deadPlayers[playerId] = false;
   delete respawnTimers[playerId];
+  socket.emit('request_positions');
 });
 
 // Fetch player info and join game

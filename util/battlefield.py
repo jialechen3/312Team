@@ -51,7 +51,7 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
             return
 
         # Prevent dead players from moving
-        if player_status.get(room_id, {}).get(player) == "dead":
+        if player_status.get(room_id, {}).get(player, {}).get('status') == "dead":
             print(f"[BLOCKED] {player} tried to move while dead")
             return
 
@@ -102,19 +102,28 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
             if other_player == player:
                 continue
             if abs(pos["x"] - new_x) <= 1 and abs(pos["y"] - new_y) <= 1:
+                tagger_team = player_data.get('team')
+                target_team = next((p.get('team') for p in updated_players if p['id'] == other_player), None)
+
+                if tagger_team == target_team:
+                    print(f"[BLOCKED] {player} tried to tag teammate {other_player}")
+                    continue
+
                 print(f"[TAG] {player} tagged {other_player}!")
                 emit('player_tagged', {
                     "tagger": player,
                     "target": other_player
                 }, room=room_id)
 
-                # Mark as dead
                 if room_id not in player_status:
                     player_status[room_id] = {}
-                player_status[room_id][other_player] = "dead"
 
-                # Start respawn timer
-                socketio.start_background_task(respawn_player, socketio, room_id, other_player)
+                player_status[room_id][other_player] = {
+                    "status": "dead",
+                    "tagger": player
+                }
+
+                socketio.start_background_task(respawn_player, socketio, room_collection, room_id, other_player)
                 break
 
         # Broadcast updated players
@@ -152,15 +161,70 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
             socketio.emit('player_positions', updated.get('players', []), room=room_id, namespace='/battlefield')
 
         print(f"[BATTLEFIELD DISCONNECT] {username} removed from battlefield players.")
+    
+    #gives latest player info after respawn
+    @socketio.on('request_positions', namespace='/battlefield')
+    def handle_request_positions():
+        auth_token = request.cookies.get('auth_token')
+        if not auth_token:
+            print("[REQUEST POSITIONS] No auth token")
+            return
 
-# Respawn player function
-def respawn_player(socketio, room_id, player):
+        user = user_collection.find_one({'auth_token': hash_token(auth_token)})
+        if not user:
+            print("[REQUEST POSITIONS] User not found")
+            return
+
+        username = user['username']
+
+        # Find which room they are in
+        room = room_collection.find_one({"players.id": username})
+        if not room:
+            print("[REQUEST POSITIONS] Room not found for", username)
+            return
+
+        room_id = room['id']
+        emit('player_positions', room.get('players', []), room=request.sid, namespace='/battlefield')
+
+
+def respawn_player(socketio, room_collection, room_id, player):
     print(f"[WAITING] Respawn timer started for {player}")
     time.sleep(5)  # 5 seconds dead
-    if room_id in player_status and player in player_status[room_id]:
-        player_status[room_id][player] = "alive"
-        print(f"[RESPAWN] {player} is now alive again!")
-        socketio.emit('player_respawned', {"player": player}, room=room_id, namespace='/battlefield')
+
+    if room_id not in player_status or player not in player_status[room_id]:
+        print(f"[RESPAWN ERROR] Player {player} status not found")
+        return
+
+    tagger = player_status[room_id][player].get('tagger')
+
+    # Fetch the tagger's team
+    room = room_collection.find_one({'id': room_id})
+    if not room:
+        print(f"[RESPAWN ERROR] Room {room_id} not found")
+        return
+
+    tagger_data = next((p for p in room.get('players', []) if p['id'] == tagger), None)
+    if not tagger_data:
+        print(f"[RESPAWN ERROR] Tagger {tagger} not found in room")
+        return
+
+    new_team = tagger_data['team']
+    print(f"[RESPAWN] {player} will switch to team {new_team}")
+
+    # Update the player's team in database
+    room_collection.update_one(
+        {"id": room_id, "players.id": player},
+        {"$set": {"players.$.team": new_team}}
+    )
+
+    # Mark as alive
+    player_status[room_id][player] = {
+        "status": "alive"
+    }
+
+    # Tell clients
+    socketio.emit('player_respawned', {"player": player}, room=room_id, namespace='/battlefield')
+
 
 # Blueprint
 battlefield_bp = Blueprint('battlefield', __name__)
