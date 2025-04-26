@@ -63,6 +63,8 @@
   let playerId = null;
   let players = {};
   let pos = { x: 0, y: 0 };
+  let deadPlayers = {};    // Track if player is dead
+  let respawnTimers = {};  // Track remaining respawn time per player
 
   fetch('/api/whoami', { credentials: 'include' })
     .then(res => res.json())
@@ -94,8 +96,27 @@
       draw();
     });
 
+    socket.on('player_tagged', ({ tagger, target }) => {
+      console.log(`[TAG] ${tagger} tagged ${target}`);
+      deadPlayers[target] = true;
+      respawnTimers[target] = 10; // Start at 10 seconds
+
+      const timer = setInterval(() => {
+        respawnTimers[target]--;
+        if (respawnTimers[target] <= 0) {
+          clearInterval(timer);
+        }
+      }, 1000);
+    });
+
+    socket.on('player_respawned', ({ player }) => {
+      console.log(`[RESPAWN] ${player} is now alive`);
+      deadPlayers[player] = false;
+      delete respawnTimers[player];
+    });
+
     document.addEventListener('keydown', handleMovement);
-    draw();
+    setInterval(draw, 1000 / 60); // Redraw 60fps
   }
 
   function handleMovement(e) {
@@ -107,7 +128,6 @@
     pos.x = Math.max(0, Math.min(pos.x, MAP_WIDTH - 1));
     pos.y = Math.max(0, Math.min(pos.y, MAP_HEIGHT - 1));
 
-    console.log("[EMIT] move:", { roomId, player: playerId, x: pos.x, y: pos.y });
     socket.emit('move', {
       roomId: roomId,
       player: playerId,
@@ -142,17 +162,32 @@
   }
 
   function drawPlayers(viewX, viewY) {
-    ctx.font = "12px Arial"; // ✅ required to show player text
+    ctx.font = "12px Arial";
+
     Object.keys(players).forEach((id) => {
       const { x, y } = players[id];
       const screenX = (x - viewX) * TILE_SIZE;
       const screenY = (y - viewY) * TILE_SIZE;
 
-      ctx.fillStyle = id === playerId ? 'lime' : 'red';
+      if (deadPlayers[id]) {
+        ctx.fillStyle = 'gray'; // Dead players = gray box
+      } else {
+        ctx.fillStyle = id === playerId ? 'lime' : 'red'; // Alive: green or red
+      }
+
       ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
 
       ctx.fillStyle = 'white';
       ctx.fillText(id, screenX + 5, screenY + 15);
+
+      if (deadPlayers[id]) {
+        ctx.fillStyle = 'yellow';
+        if (respawnTimers[id] !== undefined) {
+          ctx.fillText(`Respawn: ${respawnTimers[id]}`, screenX + 5, screenY + 30);
+        } else {
+          ctx.fillText("DEAD", screenX + 5, screenY + 30);
+        }
+      }
     });
   }
 
@@ -174,3 +209,4 @@
 </script>
 </body>
 </html>
+
