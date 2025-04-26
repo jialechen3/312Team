@@ -66,6 +66,8 @@ const terrain = Array.from({ length: MAP_HEIGHT }, (_, y) =>
 
 let playerId = null;
 let players = {};
+let deadPlayers = {};    // Tracks who is dead
+let respawnTimers = {};  // Tracks how many seconds left to respawn
 let pos = { x: 0, y: 0 };
 
 // Handle player positions when received from server
@@ -83,6 +85,32 @@ socket.on('player_positions', (playerList) => {
   }
 
   draw();
+});
+
+// New listener for tags
+socket.on('player_tagged', ({ tagger, target }) => {
+  console.log(`[TAG] ${tagger} tagged ${target}`);
+  deadPlayers[target] = true;
+  respawnTimers[target] = 5; // 5 second respawn
+
+  const timer = setInterval(() => {
+    respawnTimers[target]--;
+    if (respawnTimers[target] <= 0) {
+      clearInterval(timer);
+      delete respawnTimers[target];
+      deadPlayers[target] = false;
+      console.log(`[RESPAWN TIMER DONE] ${target} is alive again (client side)`);
+
+      // Optionally, request latest player info from server again (not critical if server sends `player_respawned`)
+    }
+  }, 1000);
+});
+
+// When a player respawns
+socket.on('player_respawned', ({ playerId }) => {
+  console.log(`[RESPAWN] ${playerId} is alive again`);
+  deadPlayers[playerId] = false;
+  delete respawnTimers[playerId];
 });
 
 // Fetch player info and join game
@@ -107,7 +135,7 @@ function joinGame() {
     player: playerId
   });
 
-  draw();  // optional initial empty draw
+  setInterval(draw, 1000 / 60);  // redraw every 16ms
 }
 
 // Emit move on key press
@@ -156,7 +184,10 @@ function drawPlayers(viewX, viewY) {
     const screenX = (player.x - viewX) * TILE_SIZE;
     const screenY = (player.y - viewY) * TILE_SIZE;
 
-    if (player.team === 'red') {
+    // Determine color
+    if (deadPlayers[id]) {
+      ctx.fillStyle = 'gray';  // Dead players are gray
+    } else if (player.team === 'red') {
       ctx.fillStyle = 'red';
     } else if (player.team === 'blue') {
       ctx.fillStyle = 'blue';
@@ -164,7 +195,7 @@ function drawPlayers(viewX, viewY) {
       ctx.fillStyle = 'gray';
     }
 
-    const size = 20;
+    const size = 35;
 
     // Highlight yourself differently
     if (id === playerId) {
@@ -175,11 +206,23 @@ function drawPlayers(viewX, viewY) {
 
     ctx.fillRect(screenX, screenY, size, size);
 
+    // Write player ID
     ctx.fillStyle = 'white';
     ctx.font = '12px Arial';
     ctx.fillText(id, screenX, screenY - 5);
+
+    // If dead, also show respawn timer
+    if (deadPlayers[id]) {
+      ctx.fillStyle = 'yellow';
+      if (respawnTimers[id] !== undefined) {
+        ctx.fillText(`Respawn: ${respawnTimers[id]}`, screenX, screenY + size + 10);
+      } else {
+        ctx.fillText("DEAD", screenX, screenY + size + 10);
+      }
+    }
   }
 }
+
 
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);

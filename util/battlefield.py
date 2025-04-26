@@ -1,12 +1,17 @@
 from flask import Blueprint, render_template, request
 from flask_socketio import emit, join_room
 from util.auth import hash_token
+import time
 
 # Constants for map size
 MAP_WIDTH = 100
 MAP_HEIGHT = 100
 
 terrain = [[0 for _ in range(MAP_WIDTH)] for _ in range(MAP_HEIGHT)]
+
+# Global memory
+room_player_data = {}  # { room_id: { player_name: {"x": int, "y": int, "team": str} } }
+player_status = {}     # { room_id: { player_name: "alive" or "dead" } }
 
 def register_battlefield_handlers(socketio, user_collection, room_collection):
 
@@ -23,15 +28,14 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
             print(f"[BATTLEFIELD JOIN] {player_id} joining room {room_id}")
             join_room(room_id)
 
-
     @socketio.on('move', namespace='/battlefield')
     def handle_move(data):
         print("[BATTLEFIELD SOCKET] move event received:", data)
         room_id = data.get('roomId')
-        player_id = data.get('player')
+        player = data.get('player')
         direction = data.get('direction')
 
-        if not room_id or not player_id or not direction:
+        if not room_id or not player or not direction:
             print("[❌] Missing move data")
             return
 
@@ -41,13 +45,19 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
             return
 
         player_list = room.get('players', [])
-        player = next((p for p in player_list if p['id'] == player_id), None)
-        if not player:
-            print(f"[❌] Player {player_id} not found in room {room_id}")
+        player_data = next((p for p in player_list if p['id'] == player), None)
+        if not player_data:
+            print(f"[❌] Player {player} not found in room {room_id}")
             return
 
-        x, y = player['x'], player['y']
+        # Prevent dead players from moving
+        if player_status.get(room_id, {}).get(player) == "dead":
+            print(f"[BLOCKED] {player} tried to move while dead")
+            return
 
+        x, y = player_data['x'], player_data['y']
+
+        # Movement logic
         if direction == 'up':
             new_x, new_y = x, y - 1
         elif direction == 'down':
@@ -60,6 +70,7 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
             print(f"[❌] Invalid direction {direction}")
             return
 
+        # Bounds checking
         if not (0 <= new_x < MAP_WIDTH and 0 <= new_y < MAP_HEIGHT):
             print(f"[❌] Move out of bounds ({new_x}, {new_y})")
             return
@@ -68,19 +79,45 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
             print(f"[❌] Blocked by wall at ({new_x}, {new_y})")
             return
 
+        # Update position in MongoDB
         result = room_collection.update_one(
-            {'id': room_id, 'players.id': player_id},
+            {'id': room_id, 'players.id': player},
             {'$set': {'players.$.x': new_x, 'players.$.y': new_y}}
         )
 
         if result.matched_count == 0:
-            print(f"[❌] Failed to update {player_id}'s position")
+            print(f"[❌] Failed to update {player}'s position")
             return
 
+        # --- Refresh room_player_data ---
         updated_room = room_collection.find_one({'id': room_id})
         updated_players = updated_room.get('players', [])
-        print(f"[🧍 Updated players]: {updated_players}")
+        room_player_data[room_id] = {}
+        for p in updated_players:
+            if 'id' in p and p['id'] is not None:
+                room_player_data[room_id][p['id']] = {"x": p['x'], "y": p['y']}
 
+        # --- Collision Detection ---
+        for other_player, pos in room_player_data[room_id].items():
+            if other_player == player:
+                continue
+            if abs(pos["x"] - new_x) <= 1 and abs(pos["y"] - new_y) <= 1:
+                print(f"[TAG] {player} tagged {other_player}!")
+                emit('player_tagged', {
+                    "tagger": player,
+                    "target": other_player
+                }, room=room_id)
+
+                # Mark as dead
+                if room_id not in player_status:
+                    player_status[room_id] = {}
+                player_status[room_id][other_player] = "dead"
+
+                # Start respawn timer
+                socketio.start_background_task(respawn_player, socketio, room_id, other_player)
+                break
+
+        # Broadcast updated players
         emit('player_positions', updated_players, room=room_id, namespace='/battlefield')
 
     @socketio.on('disconnect', namespace='/battlefield')
@@ -108,14 +145,24 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
             room_id = room["id"]
             room_collection.update_one(
                 {"id": room_id},
-                {"$pull": {"players": {"id": username}}}
-            )
+                {"$pull": {"players": {"id": username}}
+            })
 
             updated = room_collection.find_one({"id": room_id})
             socketio.emit('player_positions', updated.get('players', []), room=room_id, namespace='/battlefield')
 
         print(f"[BATTLEFIELD DISCONNECT] {username} removed from battlefield players.")
 
+# Respawn player function
+def respawn_player(socketio, room_id, player):
+    print(f"[WAITING] Respawn timer started for {player}")
+    time.sleep(5)  # 5 seconds dead
+    if room_id in player_status and player in player_status[room_id]:
+        player_status[room_id][player] = "alive"
+        print(f"[RESPAWN] {player} is now alive again!")
+        socketio.emit('player_respawned', {"player": player}, room=room_id, namespace='/battlefield')
+
+# Blueprint
 battlefield_bp = Blueprint('battlefield', __name__)
 
 @battlefield_bp.route('/battlefield')
