@@ -63,8 +63,9 @@
   let playerId = null;
   let players = {};
   let pos = { x: 0, y: 0 };
-  let deadPlayers = {};    // Track if player is dead
-  let respawnTimers = {};  // Track remaining respawn time per player
+  let viewCenter = { x: 0, y: 0 };
+  let deadPlayers = {};    
+  let respawnTimers = {};  
 
   fetch('/api/whoami', { credentials: 'include' })
     .then(res => res.json())
@@ -90,6 +91,7 @@
 
       if (players[playerId]) {
         pos = { ...players[playerId] };
+        viewCenter = { ...pos };
         console.log("Camera centered on", pos);
       }
 
@@ -99,7 +101,7 @@
     socket.on('player_tagged', ({ tagger, target }) => {
       console.log(`[TAG] ${tagger} tagged ${target}`);
       deadPlayers[target] = true;
-      respawnTimers[target] = 10; // Start at 10 seconds
+      respawnTimers[target] = 10;
 
       const timer = setInterval(() => {
         respawnTimers[target]--;
@@ -116,7 +118,7 @@
     });
 
     document.addEventListener('keydown', handleMovement);
-    setInterval(draw, 1000 / 60); // Redraw 60fps
+    setInterval(draw, 1000 / 60); 
   }
 
   function handleMovement(e) {
@@ -127,6 +129,8 @@
 
     pos.x = Math.max(0, Math.min(pos.x, MAP_WIDTH - 1));
     pos.y = Math.max(0, Math.min(pos.y, MAP_HEIGHT - 1));
+
+    viewCenter = { ...pos }; // <<< ✅ ADDED THIS LINE
 
     socket.emit('move', {
       roomId: roomId,
@@ -170,9 +174,9 @@
       const screenY = (y - viewY) * TILE_SIZE;
 
       if (deadPlayers[id]) {
-        ctx.fillStyle = 'gray'; // Dead players = gray box
+        ctx.fillStyle = 'gray';
       } else {
-        ctx.fillStyle = id === playerId ? 'lime' : 'red'; // Alive: green or red
+        ctx.fillStyle = id === playerId ? 'lime' : 'red';
       }
 
       ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
@@ -197,16 +201,18 @@
     const tilesInViewX = canvas.width / TILE_SIZE;
     const tilesInViewY = canvas.height / TILE_SIZE;
 
-    let viewX = pos.x - Math.floor(tilesInViewX / 2);
-    let viewY = pos.y - Math.floor(tilesInViewY / 2);
+    let viewX = viewCenter.x - Math.floor(tilesInViewX / 2);
+    let viewY = viewCenter.y - Math.floor(tilesInViewY / 2);
 
     viewX = Math.max(0, Math.min(viewX, MAP_WIDTH - tilesInViewX));
     viewY = Math.max(0, Math.min(viewY, MAP_HEIGHT - tilesInViewY));
 
-    drawGrid(viewX, viewY);
-    drawPlayers(viewX, viewY);
+    drawGrid(Math.floor(viewX), Math.floor(viewY));      // << fixed
+    drawPlayers(Math.floor(viewX), Math.floor(viewY));   // << fixed
   }
+
 </script>
 </body>
 </html>
+
 

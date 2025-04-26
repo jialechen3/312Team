@@ -1,4 +1,5 @@
 import uuid
+import random 
 
 from flask_socketio import emit, join_room
 from flask import request
@@ -6,11 +7,12 @@ from util.auth import hash_token
 from bson import ObjectId
 
 connected_users = {}
+
 def register_room_handlers(socketio, user_collection, room_collection):
 
     @socketio.on('create_room')
     def handle_create_room(room_name):
-        room_id = str(uuid.uuid4())  # generate unique ID
+        room_id = str(uuid.uuid4())
         new_room = {
             "id": room_id,
             "room_name": room_name,
@@ -20,7 +22,6 @@ def register_room_handlers(socketio, user_collection, room_collection):
         }
         room_collection.insert_one(new_room)
 
-        # emit all rooms with id + name
         all_rooms = [
             {"id": str(room["id"]), "name": room["room_name"]}
             for room in room_collection.find()
@@ -37,15 +38,53 @@ def register_room_handlers(socketio, user_collection, room_collection):
 
     @socketio.on('join_room')
     def handle_join_room(data):
-        room_id = data.get('room_id')  # or 'roomId' depending on your frontend
+        print("[SOCKET] join_room event received:", data)
+        room_id = data.get('room_id')
+        player = data.get('player')
 
-        join_room(room_id)
+        room = room_collection.find_one({"id": room_id})
+        if not room:
+            print(f"[❌] Room {room_id} not found")
+            return
 
+        already_in = any(p['id'] == player for p in room.get('players', []))
+        if already_in:
+            print(f"[INFO] {player} already in room")
+            return
+
+        team = "no_team"
+        for t in ["red_team", "blue_team", "no_team"]:
+            if player in room.get(t, []):
+                team = t
+                break
+
+        print(f"[INFO] {player} team: {team}")
+
+        if team == "red_team":
+            spawn_x = random.randint(97, 99)
+            spawn_y = random.randint(0, 2)
+        elif team == "blue_team":
+            spawn_x = random.randint(0, 2)
+            spawn_y = random.randint(97, 99)
+        else:
+            spawn_x = random.randint(10, 90)
+            spawn_y = random.randint(10, 90)
+
+        print(f"[SPAWN] {player} spawns at ({spawn_x}, {spawn_y})")
+
+        room_collection.update_one(
+            {"id": room_id},
+            {"$push": {"players": {"id": player, "x": spawn_x, "y": spawn_y}}}
+        )
+
+        updated = room_collection.find_one({"id": room_id})
+        emit('player_positions', updated['players'], room=room_id)
 
     @socketio.on('page_ready')
     def handle_page_ready(data):
         room_id = data.get('room_id')
         page = data.get('page')
+
         if page == 'create_lobby':
             handle_get_rooms()
             return
@@ -59,13 +98,12 @@ def register_room_handlers(socketio, user_collection, room_collection):
 
             username = user['username']
 
-            # 🔥 Disconnect cleanup for the same user (see next section)
             for sid, name in list(connected_users.items()):
                 if name == username:
                     connected_users.pop(sid)
 
             connected_users[request.sid] = username
-            join_room(room_id)  # <-- 🔥 this is the missing key!
+            join_room(room_id, sid=request.sid)  # ✅ RIGHT place to call join_room
 
             room = room_collection.find_one({"id": room_id})
             if not room:
@@ -88,6 +126,8 @@ def register_room_handlers(socketio, user_collection, room_collection):
         team = data.get('team')
         room_id = data.get('room_id')
 
+        join_room(room_id, sid=request.sid)
+
         auth_token = request.cookies.get('auth_token')
         if not auth_token:
             print('[JOIN_TEAM] Not logged in, no auth_token')
@@ -106,7 +146,6 @@ def register_room_handlers(socketio, user_collection, room_collection):
 
         print(f"[JOIN_TEAM] {username} joining {team} in room {room_id}")
 
-        # Remove from all teams
         room_collection.update_one(
             {"id": room_id},
             {"$pull": {
@@ -116,7 +155,6 @@ def register_room_handlers(socketio, user_collection, room_collection):
             }}
         )
 
-        # Add to selected team
         if team == "red":
             room_collection.update_one({"id": room_id}, {"$push": {"red_team": username}})
         elif team == "blue":
@@ -124,10 +162,6 @@ def register_room_handlers(socketio, user_collection, room_collection):
         else:
             room_collection.update_one({"id": room_id}, {"$push": {"no_team": username}})
 
-        # Ensure socket joins the room
-        join_room(room_id)
-
-        # Emit updated teams
         updated = room_collection.find_one({"id": room_id})
         emit('team_red_list', updated["red_team"], room=room_id)
         emit('team_blue_list', updated["blue_team"], room=room_id)
@@ -138,8 +172,7 @@ def register_room_handlers(socketio, user_collection, room_collection):
     def handle_start_game(data):
         room_id = data.get('room_id')
         player = data.get('player')
-        print('Room id', room_id)
-        print('Player list', player)
+
         if not room_id or not player:
             print("[ERROR] Missing room_id or player in start_game")
             return
@@ -149,16 +182,14 @@ def register_room_handlers(socketio, user_collection, room_collection):
             print(f"[ERROR] Room '{room_id}' not found")
             return
 
-        # Check if player already exists
         player_exists = any(p['id'] == player for p in room.get('players', []))
         if not player_exists:
             room_collection.update_one(
                 {'id': room_id},
-                {'$push': {'players': {'id': player, 'x': 0, 'y': 0}}}  # default center
+                {'$push': {'players': {'id': player, 'x': 0, 'y': 0}}}
             )
 
-        join_room(room_id)  # ensure socket joins the room
-
+        # 🚫 Do NOT call join_room again here
         updated = room_collection.find_one({'id': room_id})
         print("[DEBUG] Emitting player_positions:", updated['players'])
         emit('player_positions', updated['players'], room=room_id)
@@ -174,7 +205,6 @@ def register_room_handlers(socketio, user_collection, room_collection):
 
         print(f"[DISCONNECT] Cleaning up user {username}")
 
-        # ✅ 1. First, find rooms BEFORE you modify the DB
         rooms = list(room_collection.find({
             "$or": [
                 {"red_team": username},
@@ -183,7 +213,6 @@ def register_room_handlers(socketio, user_collection, room_collection):
             ]
         }))
 
-        # ✅ 2. Then remove the user
         room_collection.update_many(
             {"id": {"$in": [r["id"] for r in rooms]}},
             {"$pull": {
@@ -193,7 +222,6 @@ def register_room_handlers(socketio, user_collection, room_collection):
             }}
         )
 
-        # ✅ 3. Emit to all rooms the user was in
         for room in rooms:
             room_id = room["id"]
             updated = room_collection.find_one({"id": room_id})
@@ -202,10 +230,9 @@ def register_room_handlers(socketio, user_collection, room_collection):
             socketio.emit('team_blue_list', updated["blue_team"], room=room_id)
             socketio.emit('no_team_list', updated["no_team"], room=room_id)
 
-        print(f"[DISCONNECT] {username} removed from all rooms.")
-
     @socketio.on('connect')
     def handle_connect():
         page = request.args.get('page')
         room_id = request.args.get('room_id')
         print(f"[CONNECT] {request.sid} connected from page: {page}, room: {room_id}")
+
