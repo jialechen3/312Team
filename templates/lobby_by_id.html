@@ -4,81 +4,88 @@
     <meta charset="UTF-8">
     <title>{{ room_name }} | Lobby</title>
     <style>
-        body {
-          font-family: 'Segoe UI', sans-serif;
-          background: #1e1e2f;
-          color: #fff;
-          padding: 40px;
-          margin: 0;
-        }
-
-
-        h1 {
-          text-align: center;
-          margin-bottom: 10px;
-          font-size: 2.5rem;
-        }
-
-        .room-id {
-          text-align: center;
-          font-size: 0.9rem;
-          color: #aaa;
-        }
-
-        .container {
-          max-width: 600px;
-          margin: 0 auto;
-          background-color: #2a2a40;
-          padding: 20px;
-          border-radius: 12px;
-          box-shadow: 0 0 10px rgba(0,0,0,0.3);
-        }
-        .avatar-circle {
-          width: 32px;
-          height: 32px;
-          border-radius: 50%;
-          vertical-align: middle;
-          margin-right: 8px;
-        }
-
-        button {
-          padding: 10px 16px;
-          border: none;
-          border-radius: 8px;
-          background-color: #4f46e5;
-          color: white;
-          cursor: pointer;
-          font-size: 1rem;
-          margin-left: 8px;
-        }
-
-        button:hover {
-          background-color: #6366f1;
-        }
-
-        .team-container {
-          display: flex;
-          flex-direction: row;
-          justify-content: space-evenly;
-          padding: 40px;
-          gap: 20px;
-        }
-
-        .team {
-          width: 30%;
-          border: 1px solid #ccc;
-          padding: 20px;
-          border-radius: 10px;
-        }
-
-        .team h2 {
-          text-align: center;
-        }
-
-        .player {
-          padding: 5px 0;
-        }
-    </style>
+      body {
+        font-family: 'Segoe UI', sans-serif;
+        background: url('/static/images/tag_battle_bg.png') no-repeat center -530px fixed;
+        background-size: cover;
+        color: #fff;
+        padding: 40px;
+        margin: 0;
+      }
+    
+      h1 {
+        text-align: center;
+        margin-bottom: 10px;
+        font-size: 2.5rem;
+        text-shadow: 2px 2px 6px #000;
+      }
+    
+      .room-id {
+        text-align: center;
+        font-size: 0.9rem;
+        color: #aaa;
+      }
+    
+      .team-container {
+        display: flex;
+        flex-direction: row;
+        justify-content: space-evenly;
+        padding: 40px;
+        gap: 20px;
+      }
+    
+      .team {
+        width: 30%;
+        background-color: rgba(42, 42, 64, 0.85); /* 💎 Added opacity here */
+        border: 1px solid #ccc;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5); /* 💎 Optional subtle glow */
+      }
+    
+      .team h2 {
+        text-align: center;
+      }
+    
+      .avatar-circle {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        vertical-align: middle;
+        margin-right: 8px;
+      }
+    
+      button {
+        padding: 10px 16px;
+        border: none;
+        border-radius: 8px;
+        background-color: #4f46e5;
+        color: white;
+        cursor: pointer;
+        font-size: 1rem;
+        margin-left: 8px;
+      }
+    
+      button:hover {
+        background-color: #6366f1;
+      }
+    
+      ul {
+        list-style: none;
+        padding: 0;
+        margin-top: 20px;
+      }
+    
+      li {
+        background-color: #3b3b5c;
+        margin-bottom: 10px;
+        padding: 10px;
+        border-radius: 8px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+    </style>    
 </head>
 <body>
     {% if current_user %}
@@ -120,7 +127,7 @@
             </div>
         </div>
 
-        <div style="text-align:center;">
+        <div id="startGameContainer" style="text-align:center; display:none;">
             <button style="background-color: white; color: black;" onclick="placeholder()">Start Game</button>
         </div>
     {% else %}
@@ -146,9 +153,16 @@
 });
     let myTeam = null;  // Track which team the current user has joined
 
-  socket.on('connect', () => {
-
+    socket.on('connect', () => {
     socket.emit('page_ready', { page: 'team_select', room_id: roomId });
+
+    fetch(`/api/roominfo?room_id=${roomId}`, { credentials: 'include' })
+      .then(res => res.json())
+      .then(data => {
+        if (data.owner === data.username) {
+          document.getElementById('startGameContainer').style.display = 'block';
+        }
+      });
   });
 
   socket.on('team_red_list', (data) => {
@@ -195,48 +209,66 @@ socket.on('no_team_list', (data) => {
     }
   });
 
+  //redirect all players on game start
+  socket.on('game_started', (data) => {
+    console.log(data.msg);
+    window.location.href = `/battlefield?room=${roomId}`;
+  });
+
   function joinTeam(team) {
     socket.emit('join_team', { team: team, room_id: roomId });
   }
 
-function placeholder() {
-  if (!myTeam) {
-    alert("You must join a team before starting the game.");
-    return;
-  }
+  function placeholder() {
+    if (!myTeam) {
+      alert("You must join a team before starting the game.");
+      return;
+    }
 
-  fetch('/api/whoami', {
-    credentials: 'include'
-  })
-    .then(res => res.json())
-    .then(data => {
-      if (data.username) {
-        playerId = data.username;
-
-        console.log("Starting game with:", { room_id: roomId, player: playerId });
-
-        // Emit only after playerId is available
-        socket.emit('start_game', {
-          room_id: roomId,
-          player: playerId
-        });
-
-        // Redirect after a slight delay (optional)
-        setTimeout(() => {
-          window.location.href = `/battlefield?room=${roomId}`;
-        }, 300);
-      } else {
-        alert("You are not logged in.");
-        window.location.href = "/login";
-      }
+    fetch('/api/whoami', {
+      credentials: 'include'
     })
-    .catch(err => {
-      console.error("Error fetching username:", err);
-      alert("Failed to start the game. Please try again.");
-    });
-}
+      .then(res => res.json())
+      .then(data => {
+        if (data.username) {
+          playerId = data.username;
 
+          console.log("Starting game with:", { room_id: roomId, player: playerId });
 
+          // Emit only after playerId is available
+          socket.emit('start_game', {
+            room_id: roomId,
+            player: playerId
+          });
+
+          // After short wait, check if player is in battlefield players
+          setTimeout(() => {
+            fetch(`/api/players_in_room?room_id=${roomId}`, {
+              credentials: 'include'
+            })
+              .then(res => res.json())
+              .then(players => {
+                const found = players.some(p => p.id === playerId);
+
+                if (found) {
+                  window.location.href = `/battlefield?room=${roomId}`;
+                } else {
+                  alert("You were not placed into the battlefield. Returning to lobby.");
+                  socket.disconnect();  
+                  window.location.replace = "/lobby";  
+                }
+              });
+          }, 500);
+        } else {
+          alert("You are not logged in.");
+          window.location.href = "/login";
+        }
+      })
+      .catch(err => {
+        console.error("Error fetching username:", err);
+        alert("Failed to start the game. Please try again.");
+      });
+  }
 
 </script>
 
