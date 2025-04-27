@@ -45,6 +45,7 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
             print(f"[❌] Room {room_id} not found")
             return
 
+        # find this player's data in the DB
         player_list = room.get('players', [])
         player_data = next((p for p in player_list if p['id'] == player), None)
         if not player_data:
@@ -56,9 +57,8 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
             print(f"[BLOCKED] {player} tried to move while dead")
             return
 
+        # compute new position
         x, y = player_data['x'], player_data['y']
-
-        # Movement logic
         if direction == 'up':
             new_x, new_y = x, y - 1
         elif direction == 'down':
@@ -71,87 +71,84 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
             print(f"[❌] Invalid direction {direction}")
             return
 
-        # Bounds checking
+        # bounds & terrain check
         if not (0 <= new_x < MAP_WIDTH and 0 <= new_y < MAP_HEIGHT):
             print(f"[❌] Move out of bounds ({new_x}, {new_y})")
             return
-
         if terrain[new_y][new_x] == 1:
             print(f"[❌] Blocked by wall at ({new_x}, {new_y})")
             return
 
-        # Update position in MongoDB
+        # write move into MongoDB
         result = room_collection.update_one(
             {'id': room_id, 'players.id': player},
             {'$set': {'players.$.x': new_x, 'players.$.y': new_y}}
         )
-
         if result.matched_count == 0:
             print(f"[❌] Failed to update {player}'s position")
             return
 
-        # --- Refresh room_player_data ---
+        # refresh in-memory positions
         updated_room = room_collection.find_one({'id': room_id})
         updated_players = updated_room.get('players', [])
-        room_player_data[room_id] = {}
+        room_player_data[room_id] = {
+            p['id']: {'x': p['x'], 'y': p['y']}
+            for p in updated_players
+            if 'id' in p and p['id'] is not None
+        }
+        room_doc = room_collection.find_one({"id": room_id})
         for p in updated_players:
-            if 'id' in p and p['id'] is not None:
-                room_player_data[room_id][p['id']] = {"x": p['x'], "y": p['y']}
+            user_doc = user_collection.find_one({"username": p["id"]})
+            p["avatar"] = choose_avatar(p["id"], room_doc, user_doc)
 
-        # --- Collision Detection ---
-        for other_player, pos in room_player_data[room_id].items():
-            if other_player == player:
-                continue
-            if abs(pos["x"] - new_x) <= 1 and abs(pos["y"] - new_y) <= 1:
-                tagger_team = player_data.get('team')
-                target_team = next((p.get('team') for p in updated_players if p['id'] == other_player), None)
-
-                if tagger_team == target_team:
-                    print(f"[BLOCKED] {player} tried to tag teammate {other_player}")
+        # ── COLLISION / TAGGING ──
+        attacking_team = room.get('attacking_team')
+        if not attacking_team:
+            print(f"[❌] Attacking team not set for room {room_id}")
+        else:
+            for other_id, pos in room_player_data[room_id].items():
+                if other_id == player:
                     continue
 
-                # ⬇️ NEW: Prevent tagging already dead players
-                if player_status.get(room_id, {}).get(other_player, {}).get('status') == "dead":
-                    print(f"[BLOCKED] {player} tried to tag already dead {other_player}")
-                    continue
+                if abs(pos['x'] - new_x) <= 1 and abs(pos['y'] - new_y) <= 1:
+                    target_data = next((p for p in updated_players if p['id'] == other_id), None)
+                    if not target_data:
+                        continue
 
-                print(f"[TAG] {player} tagged {other_player}!")
-                emit('player_tagged', {
-                    "tagger": player,
-                    "target": other_player
-                }, room=room_id)
+                    mover_team  = player_data.get('team')
+                    target_team = target_data.get('team')
 
-                if room_id not in player_status:
-                    player_status[room_id] = {}
+                    # ✅ Make tagging symmetric
+                    if mover_team == target_team:
+                        continue  # same team, no tagging
 
-                player_status[room_id][other_player] = {
-                    "status": "dead",
-                    "tagger": player
-                }
+                    # 🚨 Either mover or target must be attacker
+                    if mover_team == attacking_team:
+                        victim = other_id
+                        tagger = player
+                    elif target_team == attacking_team:
+                        victim = player
+                        tagger = other_id
+                    else:
+                        continue  # Neither is attacker, no tagging
 
-                socketio.start_background_task(respawn_player, socketio, room_collection, room_id, other_player)
-                break
+                    print(f"[TAG] {tagger} (attacker) tagged {victim} (defender)")
 
-        # Broadcast updated players
-        updated_room = room_collection.find_one({'id': room_id})
+                    emit('player_tagged', {'tagger': tagger, 'target': victim}, room=room_id)
 
-        players_out = []
-        for p in updated_room.get('players', []):
-            uid = p['id']
-            avatar_fn = choose_avatar(
-                uid,
-                updated_room,
-                user_collection.find_one({'username': uid}) or {}
-            )
-            players_out.append({
-                "id": uid,
-                "x": p["x"],
-                "y": p["y"],
-                "team": p.get("team"),
-                "avatar": f"/static/avatars/{avatar_fn}"
-            })
+                    # mark victim dead
+                    player_status.setdefault(room_id, {})[victim] = {
+                        'status': 'dead',
+                        'tagger': tagger
+                    }
+                    socketio.start_background_task(
+                        respawn_player, socketio, room_collection, room_id, victim
+                    )
+                    break  # only allow 1 tag per move
 
-        emit('player_positions', players_out, room=room_id)
+
+        # broadcast the updated positions back to everyone
+        emit('player_positions', updated_players, room=room_id, namespace='/battlefield')
 
     @socketio.on('disconnect', namespace='/battlefield')
     def handle_battlefield_disconnect():

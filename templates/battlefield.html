@@ -4,6 +4,12 @@
   <meta charset="UTF-8">
   <title>Battlefield</title>
   <style>
+    :root {
+      --ui-bg: rgba(0,0,0,.55);
+      --ui-pad: 6px 16px;
+      --ui-br: 12px;
+    }
+
     body {
       margin: 0;
       padding: 0;
@@ -16,17 +22,82 @@
       align-items: center;
       cursor: crosshair;
     }
-
     canvas {
       background: #1e1e2f;
       border-radius: 12px;
-      box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
-      z-index: 10;
+      box-shadow: 0 0 15px rgba(0,0,0,.5);
       position: relative;
+      z-index: 10;
+    }
+
+    /* ---------- HUD ---------- */
+    #scoreboard, #roundSmall, #teamSmall {
+      background: var(--ui-bg);
+      padding: var(--ui-pad);
+      border-radius: var(--ui-br);
+      backdrop-filter: blur(4px);
+    }
+
+    #scoreboard {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 40px;
+      font-size: 24px;
+      z-index: 999;
+      user-select: none;
+    }
+    #roundSmall {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      font-size: 24px;
+      color: #fff;
+      z-index: 1000;
+    }
+    #teamSmall {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      font-size: 24px;
+      font-weight: bold;
+      color: #fff;
+      z-index: 1000;
+    }
+    #roundBanner {
+      position: fixed;
+      top: calc(50% - 50px);
+      left: 0;
+      right: 0;
+      text-align: center;
+      font-size: 64px;
+      font-weight: 700;
+      color: #fff;
+      text-shadow: 3px 3px 10px #000;
+      z-index: 1000;
+      display: none;
+      pointer-events: none;
     }
   </style>
 </head>
 <body>
+
+<!-- live team count (updates via JS) -->
+<div id="scoreboard">
+  <span style="color:#ff5050;">🔴 Red <span id="redLive">0</span></span>
+  <span style="color:#4ea1ff;">🔵 Blue <span id="blueLive">0</span></span>
+</div>
+
+<!-- corner clock and team indicator -->
+<div id="roundSmall">Round 0 · --:--</div>
+<div id="teamSmall">Team: --</div>
+
+<!-- center big banner -->
+<div id="roundBanner"></div>
+
+<!-- map canvas -->
 <canvas id="game" width="1200" height="750"></canvas>
 
 <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
@@ -34,29 +105,69 @@
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
+const socket = io('/battlefield', { query: { page: 'battlefield' } });
+const avatarCache = {};
+const avatarFailed = {};
 
-const socket = io('/battlefield', {
-  query: { page: 'battlefield' }
-});
+const roundBanner = document.getElementById('roundBanner');
+const roundSmall = document.getElementById('roundSmall');
+const teamSmall = document.getElementById('teamSmall');
+const redLiveEl = document.getElementById('redLive');
+const blueLiveEl = document.getElementById('blueLive');
 
-const urlParams = new URLSearchParams(window.location.search);
-const roomId = urlParams.get('room');
-if (!roomId) {
-  alert("Room ID is missing in the URL.");
-  throw new Error("Room ID not found");
+let currentRound = 0;
+let currentTaggers = '';
+let roundTimeLeft = 0;
+let roundTimerId = null;
+let bannerHideTimer = null;
+
+let playerId = null, players = {}, deadPlayers = {}, respawnTimers = {}, pos = { x: 0, y: 0 };
+
+function flashNumber(txt) {
+  roundBanner.textContent = txt;
+  roundBanner.style.display = 'block';
+  setTimeout(() => { roundBanner.style.display = 'none'; }, 900);
 }
 
-const TILE_SIZE = 40;
-const MAP_WIDTH = 100;
-const MAP_HEIGHT = 100;
+function flashBanner(txt, ms = 3000) {
+  roundBanner.textContent = txt;
+  roundBanner.style.display = 'block';
+  if (bannerHideTimer) clearTimeout(bannerHideTimer);
+  if (ms !== null) {
+    bannerHideTimer = setTimeout(() => {
+      roundBanner.style.display = 'none';
+      bannerHideTimer = null;
+    }, ms);
+  }
+}
 
+function startCountdown(total) {
+  clearInterval(roundTimerId);
+  roundTimeLeft = total;
+  paintCorner();
+  roundTimerId = setInterval(() => {
+    roundTimeLeft--;
+    paintCorner();
+    if (roundTimeLeft <= 0) clearInterval(roundTimerId);
+  }, 1000);
+}
+
+function paintCorner() {
+  const m = String(Math.floor(roundTimeLeft / 60)).padStart(2, '0');
+  const s = String(roundTimeLeft % 60).padStart(2, '0');
+  const tag = currentTaggers ? ` · Taggers: ${currentTaggers.toUpperCase()}` : '';
+  roundSmall.textContent = `Round ${currentRound}${tag} · ${m}:${s}`;
+}
+
+const roomId = new URLSearchParams(location.search).get('room');
+if (!roomId) { alert('Room ID missing'); throw new Error('No room id'); }
+
+const TILE_SIZE = 40, MAP_WIDTH = 100, MAP_HEIGHT = 100;
 const terrain = Array.from({ length: MAP_HEIGHT }, (_, y) =>
   Array.from({ length: MAP_WIDTH }, (_, x) => {
     if (y < 5 && x >= MAP_WIDTH - 5) {
-      const insideX = x >= MAP_WIDTH - 4 && x <= MAP_WIDTH - 2;
-      const insideY = y >= 1 && y <= 3;
-      if (insideX && insideY) return 0;
-      return 3;
+      const inside = (x >= MAP_WIDTH - 4 && x <= MAP_WIDTH - 2) && (y >= 1 && y <= 3);
+      return inside ? 0 : 3;
     }
     if (y >= MAP_HEIGHT - 5 && x < 5) return 2;
     if ((x + y) % 17 === 0 && x > 5 && x < MAP_WIDTH - 6 && y > 5 && y < MAP_HEIGHT - 6) return 1;
@@ -64,220 +175,180 @@ const terrain = Array.from({ length: MAP_HEIGHT }, (_, y) =>
   })
 );
 
-let playerId = null;
-let players = {};
-let deadPlayers = {};    // Tracks who is dead
-let respawnTimers = {};  // Tracks how many seconds left to respawn
-let pos = { x: 0, y: 0 };
-
-// Handle player positions when received from server
-socket.on('player_positions', (playerList) => {
-  console.log("[SOCKET] Received player_positions:", playerList);
-
+socket.on('player_positions', list => {
   players = {};
-  playerList.forEach(p => {
-    players[p.id] = {
-      x:     p.x,
-      y:     p.y,
-      team:  p.team,
-      avatar:p.avatar
-    };
-
-    // ⬇️ move this inside forEach
+  list.forEach(p => {
+    players[p.id] = p;
     const src = p.avatar;
-    if (src && !avatarCache[src] && !avatarFailed[src]) {
-      const img = new Image();
-      img.onload = () => draw();  
-      img.onerror = () => { avatarFailed[src] = true; draw(); };
-      img.src = src;
-      avatarCache[src] = img;
+    if (src) {
+      if (!avatarCache[src] && !avatarFailed[src]) {
+        const img = new Image();
+        img.onload = () => draw();
+        img.onerror = () => { avatarFailed[src] = true; draw(); };
+        img.src = '/static/avatars/' + src;
+        avatarCache[src] = img;
+      }
     }
   });
 
   if (players[playerId]) {
     pos = { x: players[playerId].x, y: players[playerId].y };
-    console.log("[SOCKET] Centered camera on:", pos);
+
+    // 🆕 Update teamSmall
+    const myTeam = players[playerId].team;
+    teamSmall.textContent = `Team: ${myTeam ? myTeam.toUpperCase() : '--'}`;
+    teamSmall.style.color = myTeam === 'red' ? '#ff5050' :
+                             myTeam === 'blue' ? '#4ea1ff' :
+                             '#ffffff';
   }
 
+  redLiveEl.textContent = list.filter(p => p.team === 'red').length;
+  blueLiveEl.textContent = list.filter(p => p.team === 'blue').length;
   draw();
 });
 
-
-// New listener for tags
-socket.on('player_tagged', ({ tagger, target }) => {
-  console.log(`[TAG] ${tagger} tagged ${target}`);
+socket.on('player_tagged', ({ target }) => {
   deadPlayers[target] = true;
-  respawnTimers[target] = 5; // 5 second respawn
-
-  const timer = setInterval(() => {
+  respawnTimers[target] = 5;
+  const t = setInterval(() => {
     respawnTimers[target]--;
     if (respawnTimers[target] <= 0) {
-      clearInterval(timer);
+      clearInterval(t);
       delete respawnTimers[target];
       deadPlayers[target] = false;
-      console.log(`[RESPAWN TIMER DONE] ${target} is alive again (client side)`);
-
-      // Optionally, request latest player info from server again (not critical if server sends `player_respawned`)
     }
   }, 1000);
 });
 
-// When a player respawns
-socket.on('player_respawned', ({ playerId }) => {
-  console.log(`[RESPAWN] ${playerId} is alive again`);
-  deadPlayers[playerId] = false;
-  delete respawnTimers[playerId];
+socket.on('player_respawned', ({ player }) => {
+  deadPlayers[player] = false;
+  delete respawnTimers[player];
   socket.emit('request_positions');
 });
 
-// Fetch player info and join game
-fetch('/api/whoami', { credentials: 'include' })
-  .then(res => res.json())
-  .then(data => {
-    if (data.username) {
-      playerId = data.username;
-      console.log("[JOIN GAME] Player ID:", playerId);
-      joinGame();
-    } else {
-      alert("Not authenticated");
-      window.location.href = "/login";
-    }
-  });
-
-function joinGame() {
-  console.log("[JOIN GAME] joinGame() called");
-
-  socket.emit('join_room', {
-    room_id: roomId,
-    player: playerId
-  });
-
-  setInterval(draw, 1000 / 60);  // redraw every 16ms
-}
-
-// Emit move on key press
-document.addEventListener('keydown', (e) => {
-  if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
-    const direction = e.key.replace('Arrow', '').toLowerCase();
-
-    console.log("[SOCKET] Emitting move:", { direction: direction });
-    socket.emit('move', {
-      roomId: roomId,
-      player: playerId,
-      direction: direction
-    });
-  }
+socket.on('round_prep', d => {
+  flashNumber(d.seconds);
+  currentRound = d.next_round;
+  currentTaggers = d.taggers;
+  roundTimeLeft = d.seconds;
+  paintCorner();
+});
+socket.on('round_start', d => {
+  currentRound = d.round;
+  currentTaggers = d.taggers;
+  flashBanner(`ROUND ${currentRound} – ${currentTaggers.toUpperCase()} TAGGERS`, 3000);
+  startCountdown(d.duration);
+});
+socket.on('round_end', d => {
+  flashBanner(`⏱ Round ${d.round} over`, 3000);
 });
 
-function drawGrid(viewX, viewY) {
+socket.on('match_over', ({ winner }) => {
+  clearInterval(roundTimerId);
+  if (bannerHideTimer) clearTimeout(bannerHideTimer);
+
+  const headline = winner === 'red' ? 'Red Team Wins!' :
+                   winner === 'blue' ? 'Blue Team Wins!' :
+                   'Match Draw!';
+  roundBanner.innerHTML = `
+    <div style="margin-bottom:20px;">🏆 ${headline}</div>
+    <button id="toLobbyBtn" class="lobby-btn">↩ Back&nbsp;to&nbsp;Lobby</button>
+  `;
+  roundBanner.style.display = 'block';
+  roundBanner.style.pointerEvents = 'auto';
+
+  document.getElementById('toLobbyBtn').onclick = () => location.href = '/lobby';
+});
+
+function hideBanner() {
+  roundBanner.style.display = 'none';
+  roundBanner.style.pointerEvents = 'none';
+}
+
+fetch('/api/whoami', { credentials: 'include' })
+  .then(r => r.json()).then(d => {
+    if (!d.username) { location = '/login'; return; }
+    playerId = d.username;
+    socket.emit('join_room', { room_id: roomId, player: playerId });
+    setInterval(draw, 1000 / 60);
+  });
+
+document.addEventListener('keydown', e => {
+  if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+  socket.emit('move', {
+    roomId, player: playerId,
+    direction: e.key.replace('Arrow', '').toLowerCase()
+  });
+});
+
+function drawGrid(vx, vy) {
   const cols = Math.ceil(canvas.width / TILE_SIZE);
   const rows = Math.ceil(canvas.height / TILE_SIZE);
-
-  for (let x = 0; x < cols; x++) {
-    for (let y = 0; y < rows; y++) {
-      const worldX = Math.floor(viewX + x);
-      const worldY = Math.floor(viewY + y);
-
-      if (worldX < MAP_WIDTH && worldY < MAP_HEIGHT) {
-        const tileType = terrain[worldY][worldX];
-        switch (tileType) {
-          case 1: ctx.fillStyle = 'gray'; break;
-          case 2: ctx.fillStyle = 'blue'; break;
-          case 3: ctx.fillStyle = 'red'; break;
-          default: ctx.fillStyle = '#1e1e2f';
-        }
-        ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-        ctx.strokeStyle = '#222';
-        ctx.strokeRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-      }
-    }
+  for (let x = 0; x < cols; x++) for (let y = 0; y < rows; y++) {
+    const wx = Math.floor(vx + x), wy = Math.floor(vy + y);
+    if (wx >= MAP_WIDTH || wy >= MAP_HEIGHT) continue;
+    ctx.fillStyle =
+      terrain[wy][wx] === 1 ? 'gray' :
+      terrain[wy][wx] === 2 ? 'blue' :
+      terrain[wy][wx] === 3 ? 'red' : '#1e1e2f';
+    ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+    ctx.strokeStyle = '#222';
+    ctx.strokeRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
   }
 }
 
-const avatarCache = {};
-const avatarFailed = {};     // <-- new map
-
-function drawPlayers(viewX, viewY) {
+function drawPlayers(vx, vy) {
   const size = 40;
   for (const id in players) {
     const p = players[id];
-    const screenX = (p.x - viewX) * TILE_SIZE;
-    const screenY = (p.y - viewY) * TILE_SIZE;
-
+    const sx = (p.x - vx) * TILE_SIZE;
+    const sy = (p.y - vy) * TILE_SIZE;
     const src = p.avatar;
     const img = avatarCache[src];
     const isDead = deadPlayers[id];
 
-    // --- Drawing the avatar or fallback ---
     if (img && img.complete && !avatarFailed[src]) {
       ctx.save();
-
-      if (isDead) {
-        ctx.filter = 'grayscale(100%) brightness(80%)';
-      } else if (p.team === 'red') {
-        ctx.filter = 'brightness(110%) sepia(30%) hue-rotate(-10deg)';
-      } else if (p.team === 'blue') {
-        ctx.filter = 'brightness(110%) sepia(30%) hue-rotate(200deg)';
-      } else {
-        ctx.filter = 'none';
-      }
-
-      ctx.drawImage(img, screenX, screenY, size, size);
+      ctx.filter = isDead ? 'grayscale(100%) brightness(70%)' : 'none';
+      ctx.drawImage(img, sx, sy, size, size);
       ctx.restore();
     } else {
-      // fallback square
-      ctx.fillStyle = isDead ? 'gray'
-                  : (p.team === 'red') ? 'red'
-                  : (p.team === 'blue') ? 'blue'
-                  : 'gray';
-      ctx.fillRect(screenX, screenY, size, size);
+      ctx.fillStyle = isDead ? 'gray' :
+                      p.team === 'red' ? 'red' :
+                      p.team === 'blue' ? 'blue' : 'gray';
+      ctx.fillRect(sx, sy, size, size);
     }
 
-    // Outline
     ctx.lineWidth = 3;
-    ctx.strokeStyle = (p.team === 'red') ? 'red'
-                    : (p.team === 'blue') ? 'blue' : 'gray';
-    ctx.strokeRect(screenX, screenY, size, size);
+    ctx.strokeStyle = p.team === 'red' ? 'red' :
+                      p.team === 'blue' ? 'blue' : 'gray';
+    ctx.strokeRect(sx, sy, size, size);
 
     if (id === playerId) {
       ctx.strokeStyle = 'gold';
       ctx.lineWidth = 4;
-      ctx.strokeRect(screenX, screenY, size, size);
+      ctx.strokeRect(sx, sy, size, size);
     }
 
-    // Username
     ctx.fillStyle = 'white';
     ctx.font = '12px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText(id, screenX + size / 2, screenY - 5);
+    ctx.fillText(id, sx + size / 2, sy - 5);
 
-    // Respawn Timer
-    if (deadPlayers[id]) {
+    if (isDead) {
       ctx.fillStyle = 'yellow';
-      if (respawnTimers[id] !== undefined) {
-        ctx.fillText(`Respawn: ${respawnTimers[id]}`, screenX + size / 2, screenY + size + 15);
-      } else {
-        ctx.fillText('DEAD', screenX + size / 2, screenY + size + 15);
-      }
+      const txt = respawnTimers[id] !== undefined ? `Respawn: ${respawnTimers[id]}` : 'DEAD';
+      ctx.fillText(txt, sx + size / 2, sy + size + 15);
     }
   }
 }
 
-
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  const tilesInViewX = canvas.width / TILE_SIZE;
-  const tilesInViewY = canvas.height / TILE_SIZE;
-
-  let viewX = pos.x - Math.floor(tilesInViewX / 2);
-  let viewY = pos.y - Math.floor(tilesInViewY / 2);
-
-  viewX = Math.max(0, Math.min(viewX, MAP_WIDTH - tilesInViewX));
-  viewY = Math.max(0, Math.min(viewY, MAP_HEIGHT - tilesInViewY));
-
-  drawGrid(viewX, viewY);
-  drawPlayers(viewX, viewY);
+  const vx = Math.max(0, Math.min(pos.x - canvas.width / (TILE_SIZE * 2), MAP_WIDTH - canvas.width / TILE_SIZE));
+  const vy = Math.max(0, Math.min(pos.y - canvas.height / (TILE_SIZE * 2), MAP_HEIGHT - canvas.height / TILE_SIZE));
+  drawGrid(vx, vy);
+  drawPlayers(vx, vy);
 }
 </script>
 
