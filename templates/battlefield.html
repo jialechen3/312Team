@@ -41,6 +41,7 @@
       font-size:64px;font-weight:700;color:#fff;text-shadow:3px 3px 10px #000;
       z-index:1000;display:none;pointer-events:none;
     }
+
   </style>
 </head>
 <body>
@@ -76,6 +77,7 @@ let currentRound   = 0;
 let currentTaggers = '';   // "red" | "blue"
 let roundTimeLeft  = 0;
 let roundTimerId   = null;
+let bannerHideTimer = null;
 
 /* flash a single digit (“5”…“1”) for 0.9 s */
 function flashNumber(txt){
@@ -88,7 +90,17 @@ function flashNumber(txt){
 function flashBanner(txt, ms = 3000){
   roundBanner.textContent = txt;
   roundBanner.style.display = 'block';
-  if(ms !== null) setTimeout(()=>{ roundBanner.style.display='none'; }, ms);
+
+  /* clear old timer, if any */
+  if (bannerHideTimer){ clearTimeout(bannerHideTimer); bannerHideTimer = null; }
+
+  /* start a new hide-timer only when ms is a number */
+  if (ms !== null){
+    bannerHideTimer = setTimeout(()=>{
+      roundBanner.style.display = 'none';
+      bannerHideTimer = null;        // reset
+    }, ms);
+  }
 }
 
 /* start / restart the corner countdown */
@@ -173,11 +185,37 @@ socket.on('round_start', d=>{
 socket.on('round_end', d=>{
   flashBanner(`⏱ Round ${d.round} over`, 3000);
 });
-socket.on('match_over', d=>{
-  const msg = d.winner==='red'  ? 'Red Team Wins!'  :
-              d.winner==='blue' ? 'Blue Team Wins!' : 'Match Draw!';
-  flashBanner(`🏆 ${msg}`, null);   // stays until page change
+
+/* ───────── MATCH OVER ───────── */
+socket.on('match_over', ({ winner }) => {
+  /* 1 – stop timers that might hide the banner */
+  clearInterval(roundTimerId);
+  if (bannerHideTimer){ clearTimeout(bannerHideTimer); bannerHideTimer = null; }
+
+  /* 2 – winner headline */
+  const headline =
+        winner === 'red'  ? 'Red Team Wins!'  :
+        winner === 'blue' ? 'Blue Team Wins!' :
+                            'Match Draw!';
+
+  /* 3 – build winner screen */
+  roundBanner.innerHTML = `
+    <div style="margin-bottom:20px;">🏆 ${headline}</div>
+    <button id="toLobbyBtn" class="lobby-btn">↩ Back&nbsp;to&nbsp;Lobby</button>
+  `;
+  roundBanner.style.display       = 'block';
+  roundBanner.style.pointerEvents = 'auto';   // ←--- make banner clickable!
+
+  /* 4 – button click → lobby */
+  document.getElementById('toLobbyBtn').onclick = () => location.href = '/lobby';
 });
+
+/* whenever you hide the banner again elsewhere: */
+function hideBanner(){
+  roundBanner.style.display       = 'none';
+  roundBanner.style.pointerEvents = 'none';   // restore old behaviour
+}
+
 
 /* ─────────────────────────── join & input ─────────────────────────── */
 fetch('/api/whoami',{credentials:'include'})
