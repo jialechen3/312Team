@@ -6,6 +6,32 @@ from util.auth import hash_token
 from bson import ObjectId
 
 connected_users = {}
+
+MAP_WIDTH  = 100      # same numbers you use in battlefield.html
+MAP_HEIGHT = 100
+
+def team_spawn(username, room_doc):
+    """Return (x, y) spawn coords based on team arrays."""
+    if username in room_doc['red_team']:      # top-right
+        return MAP_WIDTH - 2, 1               # (98,1)
+    if username in room_doc['blue_team']:     # bottom-left
+        return 1, MAP_HEIGHT - 2              # (1,98)
+    return MAP_WIDTH // 2, MAP_HEIGHT // 2    # centre fallback
+
+def choose_avatar(username, room, user_doc):
+    """Return an avatar filename (not full URL)."""
+    # custom upload?
+    if user_doc.get('avatar'):
+        return user_doc['avatar']
+
+    # fallback by team
+    if username in room['red_team']:
+        return 'defaultRedTeam.png'
+    if username in room['blue_team']:
+        return 'defaultBlueTeam.png'
+    return 'defaultRedTeam.png'
+
+
 def register_room_handlers(socketio, user_collection, room_collection):
 
     @socketio.on('create_room')
@@ -138,8 +164,7 @@ def register_room_handlers(socketio, user_collection, room_collection):
     def handle_start_game(data):
         room_id = data.get('room_id')
         player = data.get('player')
-        print('Room id', room_id)
-        print('Player list', player)
+
         if not room_id or not player:
             print("[ERROR] Missing room_id or player in start_game")
             return
@@ -149,19 +174,34 @@ def register_room_handlers(socketio, user_collection, room_collection):
             print(f"[ERROR] Room '{room_id}' not found")
             return
 
-        # Check if player already exists
-        player_exists = any(p['id'] == player for p in room.get('players', []))
-        if not player_exists:
+        # add player record if missing
+        if not any(p['id'] == player for p in room.get('players', [])):
+            sx, sy = team_spawn(player, room)  # NEW
             room_collection.update_one(
                 {'id': room_id},
-                {'$push': {'players': {'id': player, 'x': 0, 'y': 0}}}  # default center
+                {'$push': {'players': {'id': player, 'x': sx, 'y': sy}}}
             )
 
-        join_room(room_id)  # ensure socket joins the room
+        join_room(room_id)
 
         updated = room_collection.find_one({'id': room_id})
-        print("[DEBUG] Emitting player_positions:", updated['players'])
-        emit('player_positions', updated['players'], room=room_id)
+
+        players_out = []
+        for p in updated.get('players', []):
+            uid = p['id']
+            avatar_fn = choose_avatar(
+                uid,
+                updated,
+                user_collection.find_one({'username': uid}) or {}
+            )
+            players_out.append({
+                'id': uid,
+                'x': p['x'],
+                'y': p['y'],
+                'avatar': f"/static/avatars/{avatar_fn}"
+            })
+
+        emit('player_positions', players_out, room=room_id)
 
     @socketio.on('disconnect')
     def handle_disconnect():

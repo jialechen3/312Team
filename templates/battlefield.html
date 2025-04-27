@@ -62,6 +62,7 @@
 
   let playerId = null;
   let players = {};
+  const avatarCache = {};
   let pos = { x: 0, y: 0 };
 
   fetch('/api/whoami', { credentials: 'include' })
@@ -80,19 +81,18 @@
     socket.emit('join_room', { room_id: roomId, player: playerId });
 
     socket.on('player_positions', (playerList) => {
-      console.log("Received player_positions:", playerList);
-      players = {};
-      playerList.forEach(p => {
-        players[p.id] = { x: p.x, y: p.y };
-      });
+  console.log("Received player_positions:", playerList);
+  players = {};
+  playerList.forEach(p => {
+    players[p.id] = p;           // keep x,y,avatar
+  });
 
-      if (players[playerId]) {
-        pos = { ...players[playerId] };
-        console.log("Camera centered on", pos);
-      }
+  if (players[playerId]) {
+    pos = { ...players[playerId] };
+  }
+  draw();
+});
 
-      draw();
-    });
 
     document.addEventListener('keydown', handleMovement);
     draw();
@@ -142,19 +142,37 @@
   }
 
   function drawPlayers(viewX, viewY) {
-    ctx.font = "12px Arial"; // ✅ required to show player text
-    Object.keys(players).forEach((id) => {
-      const { x, y } = players[id];
-      const screenX = (x - viewX) * TILE_SIZE;
-      const screenY = (y - viewY) * TILE_SIZE;
+  ctx.font = "12px Arial";
+  Object.keys(players).forEach(id => {
+    const p = players[id];
+    const screenX = (p.x - viewX) * TILE_SIZE;
+    const screenY = (p.y - viewY) * TILE_SIZE;
 
+    // -- avatar logic ------------------------------------
+    const imgSrc = p.avatar;          // supplied by server
+    if (imgSrc && !avatarCache[imgSrc]) {
+      const img = new Image();
+      img.onload = draw;
+      img.src = imgSrc;
+      avatarCache[imgSrc] = img;
+    }
+    const img = avatarCache[imgSrc];
+
+    if (img && img.complete) {
+      // draw avatar 40×40 centred in tile
+      ctx.drawImage(img, screenX, screenY, TILE_SIZE, TILE_SIZE);
+    } else {
+      // placeholder while loading
       ctx.fillStyle = id === playerId ? 'lime' : 'red';
       ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
+    }
 
-      ctx.fillStyle = 'white';
-      ctx.fillText(id, screenX + 5, screenY + 15);
-    });
-  }
+    // username label
+    ctx.fillStyle = '#fff';
+    ctx.fillText(id, screenX + 3, screenY + 12);
+  });
+}
+
 
   function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);

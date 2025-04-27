@@ -1,5 +1,6 @@
 from flask import Blueprint, render_template, request
 from flask_socketio import emit
+from util.rooms import choose_avatar
 
 
 def register_battlefield_handlers(socketio, user_collection, room_collection):
@@ -25,9 +26,31 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
             print(f"[❌] No match found for {player} in room {room_id} — not updating")
 
         updated = room_collection.find_one({'id': room_id})
-        print(f"[🧍 Updated players]: {updated.get('players', [])}")
 
-        emit('player_positions', updated['players'], room=room_id)
+        #  Build list that always has 'avatar'
+        players_out = []
+        for p in updated.get('players', []):
+            uid = p['id']
+
+            user_doc = user_collection.find_one({'username': uid}) or {}
+            avatar_fn = user_doc.get('avatar')  # uploaded?
+
+            if not avatar_fn:  # fallback
+                if uid in updated['red_team']:
+                    avatar_fn = 'defaultRedTeam.png'
+                elif uid in updated['blue_team']:
+                    avatar_fn = 'defaultBlueTeam.png'
+                else:
+                    avatar_fn = 'defaultRedTeam.png'
+
+            players_out.append({
+                'id': uid,
+                'x': p['x'],
+                'y': p['y'],
+                'avatar': f"/static/avatars/{avatar_fn}"
+            })
+
+        emit('player_positions', players_out, room=room_id)
 
 
 battlefield_bp = Blueprint('battlefield', __name__)
