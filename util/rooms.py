@@ -42,7 +42,7 @@ def register_room_handlers(socketio, user_collection, room_collection):
 
         new_room = {
             "id": room_id,
-            "room_name": html.escape(room_name),
+            "room_name": room_name,
             "owner": username,   
             "red_team": [],
             "blue_team": [],
@@ -52,7 +52,7 @@ def register_room_handlers(socketio, user_collection, room_collection):
         room_collection.insert_one(new_room)
 
         all_rooms = [
-            {"id": str(room["id"]), "name": room["room_name"]}
+            {"id": str(room["id"]), "name": html.escape(room["room_name"])}
             for room in room_collection.find()
         ]
         emit('room_list', all_rooms, broadcast=True)
@@ -60,7 +60,7 @@ def register_room_handlers(socketio, user_collection, room_collection):
     @socketio.on('get_rooms', namespace='/lobby')
     def handle_get_rooms():
         all_rooms = [
-            {"id": str(room["id"]), "name": room["room_name"]}
+            {"id": str(room["id"]), "name": html.escape(room["room_name"])}
             for room in room_collection.find()
         ]
         emit('room_list', all_rooms)
