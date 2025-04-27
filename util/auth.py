@@ -1,6 +1,6 @@
 import re
 import os
-
+import html
 
 from flask import Flask, render_template, Blueprint, redirect, jsonify
 from flask import request, g
@@ -32,6 +32,8 @@ def register():
 
     hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
     user_id = str(uuid.uuid4())
+
+    print(f'please for the love of god')
 
     user_collection.insert_one({
         "id": user_id,
