@@ -110,7 +110,7 @@
 
         <div class="team-container">
             <div class="team">
-                <h2>Team Red</h2>
+                <h2>Team Red (<span id="redCount">0</span>)</h2>
                 <button style="background-color: red; color: white;" onclick="joinTeam('red')">Join Team</button>
                 <ul id="redPlayerList"></ul>
             </div>
@@ -121,7 +121,7 @@
             </div>
 
             <div class="team">
-                <h2>Team Blue</h2>
+                <h2>Team Blue (<span id="blueCount">0</span>)</h2>
                 <button style="background-color: blue; color: white;" onclick="joinTeam('blue')">Join Team</button>
                 <ul id="bluePlayerList"></ul>
             </div>
@@ -221,6 +221,11 @@ socket.on('no_team_list', (data) => {
 socket.on('game_started', () => {
   console.log("Game officially started!");
   window.location.href = `/battlefield?room=${roomId}`;
+});
+
+  socket.on('team_counts', counts => {
+  document.getElementById('redCount').textContent  = counts.red;
+  document.getElementById('blueCount').textContent = counts.blue;
 });
 
 function placeholder() {

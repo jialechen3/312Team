@@ -4,9 +4,31 @@ from flask_socketio import emit, join_room
 from flask import request
 from util.auth import hash_token
 from bson import ObjectId
+from util.rounds import kick_off_round_system
 
 connected_users = {}
 def register_room_handlers(socketio, user_collection, room_collection):
+
+    def _emit_team_counts(room_id: str):
+        """
+        Broadcast {"red": <int>, "blue": <int>} to everyone in <room_id>.
+        """
+        room = room_collection.find_one(
+            {"id": room_id},
+            {"red_team": 1, "blue_team": 1, "_id": 0}
+        )
+        if not room:
+            return
+
+        socketio.emit(
+            'team_counts',
+            {
+                "red": len(room.get("red_team", [])),
+                "blue": len(room.get("blue_team", [])),
+            },
+            room=room_id,
+            namespace='/lobby'
+        )
 
     @socketio.on('create_room', namespace='/lobby')
     def handle_create_room(room_name):
@@ -26,7 +48,7 @@ def register_room_handlers(socketio, user_collection, room_collection):
         new_room = {
             "id": room_id,
             "room_name": room_name,
-            "owner": username,   
+            "owner": username,
             "red_team": [],
             "blue_team": [],
             "no_team": [],
@@ -94,6 +116,7 @@ def register_room_handlers(socketio, user_collection, room_collection):
             emit('team_red_list', updated["red_team"], room=room_id)
             emit('team_blue_list', updated["blue_team"], room=room_id)
             emit('no_team_list', updated["no_team"], room=room_id)
+            _emit_team_counts(room_id)
 
     @socketio.on('join_team', namespace='/lobby')
     def handle_join_team(data):
@@ -145,6 +168,7 @@ def register_room_handlers(socketio, user_collection, room_collection):
         emit('team_blue_list', updated["blue_team"], room=room_id)
         emit('no_team_list', updated["no_team"], room=room_id)
         emit('joined_team', {'room_id': room_id, 'team': team}, to=request.sid)
+        _emit_team_counts(room_id)
     @socketio.on('am_i_owner', namespace='/lobby')
     def handle_am_i_owner(data):
         room_id = data.get('room_id')
@@ -239,6 +263,8 @@ def register_room_handlers(socketio, user_collection, room_collection):
         # Optionally, tell frontend: game started
         emit('game_started', room=room_id)
 
+        kick_off_round_system(socketio, room_collection, room_id)
+
 
     @socketio.on('disconnect', namespace='/lobby')
     def handle_disconnect():
@@ -278,6 +304,7 @@ def register_room_handlers(socketio, user_collection, room_collection):
             socketio.emit('team_red_list', updated["red_team"], room=room_id)
             socketio.emit('team_blue_list', updated["blue_team"], room=room_id)
             socketio.emit('no_team_list', updated["no_team"], room=room_id)
+            _emit_team_counts(room_id)
 
         print(f"[DISCONNECT] {username} removed from all rooms.")
 
