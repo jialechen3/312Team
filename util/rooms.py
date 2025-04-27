@@ -5,7 +5,23 @@ from flask import request
 from util.auth import hash_token
 from bson import ObjectId
 
+
 connected_users = {}
+
+def choose_avatar(username, room_doc, user_doc):
+    """
+    Return an avatar filename (no leading /static/ part).
+    • If the user uploaded one (user_doc["avatar"]), use it.
+    • Otherwise return team default PNG.
+    """
+    if user_doc.get("avatar"):
+        return user_doc["avatar"]
+    if username in room_doc["red_team"]:
+        return "defaultRedTeamPNG.png"
+    if username in room_doc["blue_team"]:
+        return "defaultBlueTeamPNG.png"
+
+
 def register_room_handlers(socketio, user_collection, room_collection):
 
     @socketio.on('create_room', namespace='/lobby')
@@ -196,7 +212,24 @@ def register_room_handlers(socketio, user_collection, room_collection):
 
         # ✅ Emit updated players list
         updated_room = room_collection.find_one({'id': room_id})
-        emit('player_positions', updated_room['players'], room=room_id)
+
+        players_out = []
+        for p in updated_room.get('players', []):
+            uid = p['id']
+            avatar_fn = choose_avatar(
+                uid,
+                updated_room,
+                user_collection.find_one({'username': uid}) or {}
+            )
+            players_out.append({
+                "id": uid,
+                "x": p["x"],
+                "y": p["y"],
+                "team": p.get("team"),
+                "avatar": f"/static/avatars/{avatar_fn}"
+            })
+
+        emit('player_positions', players_out, room=room_id)
 
     @socketio.on('disconnect', namespace='/lobby')
     def handle_disconnect():

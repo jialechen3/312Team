@@ -75,9 +75,14 @@ socket.on('player_positions', (playerList) => {
   console.log("[SOCKET] Received player_positions:", playerList);
 
   players = {};
-  playerList.forEach(p => {
-    players[p.id] = { x: p.x, y: p.y, team: p.team };
-  });
+playerList.forEach(p => {
+  players[p.id] = {
+    x:     p.x,
+    y:     p.y,
+    team:  p.team,
+    avatar:p.avatar
+  };
+});
 
   if (players[playerId]) {
     pos = { x: players[playerId].x, y: players[playerId].y };
@@ -178,49 +183,42 @@ function drawGrid(viewX, viewY) {
   }
 }
 
+const avatarCache = {};
+const avatarFailed = {};     // <-- new map
+
 function drawPlayers(viewX, viewY) {
+  const size = 35;
   for (const id in players) {
-    const player = players[id];
+    const p = players[id];
+    const screenX = (p.x - viewX) * TILE_SIZE;
+    const screenY = (p.y - viewY) * TILE_SIZE;
 
-    const screenX = (player.x - viewX) * TILE_SIZE;
-    const screenY = (player.y - viewY) * TILE_SIZE;
+    // load once
+    const src = p.avatar;
+    if (src && !avatarCache[src] && !avatarFailed[src]) {
+      const img = new Image();
+      img.onload  = () => draw();
+      img.onerror = () => { avatarFailed[src] = true; draw(); };   // <- mark failed
+      img.src = src;
+      avatarCache[src] = img;
+    }
+    const img = avatarCache[src];
 
-    // Determine color
-    if (deadPlayers[id]) {
-      ctx.fillStyle = 'gray';  // Dead players are gray
-    } else if (player.team === 'red') {
-      ctx.fillStyle = 'red';
-    } else if (player.team === 'blue') {
-      ctx.fillStyle = 'blue';
+    // outline colour
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = (p.team === 'red') ? 'red'
+                     : (p.team === 'blue') ? 'blue' : 'gray';
+
+    // draw avatar or fallback square
+    if (img && img.complete && !avatarFailed[src]) {
+      ctx.drawImage(img, screenX, screenY, size, size);
     } else {
-      ctx.fillStyle = 'gray';
+      ctx.fillStyle = '#333';
+      ctx.fillRect(screenX, screenY, size, size);
     }
+    ctx.strokeRect(screenX, screenY, size, size);
 
-    const size = 35;
-
-    // Highlight yourself differently
-    if (id === playerId) {
-      ctx.strokeStyle = 'gold';
-      ctx.lineWidth = 3;
-      ctx.strokeRect(screenX, screenY, size, size);
-    }
-
-    ctx.fillRect(screenX, screenY, size, size);
-
-    // Write player ID
-    ctx.fillStyle = 'white';
-    ctx.font = '12px Arial';
-    ctx.fillText(id, screenX, screenY - 5);
-
-    // If dead, also show respawn timer
-    if (deadPlayers[id]) {
-      ctx.fillStyle = 'yellow';
-      if (respawnTimers[id] !== undefined) {
-        ctx.fillText(`Respawn: ${respawnTimers[id]}`, screenX, screenY + size + 10);
-      } else {
-        ctx.fillText("DEAD", screenX, screenY + size + 10);
-      }
-    }
+    // … username / self-highlight / respawn timer …
   }
 }
 

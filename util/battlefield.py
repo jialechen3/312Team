@@ -2,6 +2,7 @@ from flask import Blueprint, render_template, request
 from flask_socketio import emit, join_room
 from util.auth import hash_token
 import time
+from util.rooms import choose_avatar
 
 # Constants for map size
 MAP_WIDTH = 100
@@ -127,7 +128,25 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
                 break
 
         # Broadcast updated players
-        emit('player_positions', updated_players, room=room_id, namespace='/battlefield')
+        updated_room = room_collection.find_one({'id': room_id})
+
+        players_out = []
+        for p in updated_room.get('players', []):
+            uid = p['id']
+            avatar_fn = choose_avatar(
+                uid,
+                updated_room,
+                user_collection.find_one({'username': uid}) or {}
+            )
+            players_out.append({
+                "id": uid,
+                "x": p["x"],
+                "y": p["y"],
+                "team": p.get("team"),
+                "avatar": f"/static/avatars/{avatar_fn}"
+            })
+
+        emit('player_positions', players_out, room=room_id)
 
     @socketio.on('disconnect', namespace='/battlefield')
     def handle_battlefield_disconnect():
