@@ -97,57 +97,6 @@ def register_room_handlers(socketio, user_collection, room_collection):
             emit('team_blue_list', updated["blue_team"], room=room_id)
             emit('no_team_list', updated["no_team"], room=room_id)
 
-    @socketio.on('join_team', namespace='/lobby')
-    def handle_join_team(data):
-        team = data.get('team')
-        room_id = data.get('room_id')
-
-        auth_token = request.cookies.get('auth_token')
-        if not auth_token:
-            print('[JOIN_TEAM] Not logged in, no auth_token')
-            return
-
-        user = user_collection.find_one({'auth_token': hash_token(auth_token)})
-        if not user:
-            print('[JOIN_TEAM] User not found')
-            return
-
-        username = user['username']
-        room = room_collection.find_one({"id": room_id})
-        if not room:
-            print(f"[JOIN_TEAM] Room {room_id} not found")
-            return
-
-        print(f"[JOIN_TEAM] {username} joining {team} in room {room_id}")
-
-        # Remove from all teams
-        room_collection.update_one(
-            {"id": room_id},
-            {"$pull": {
-                "red_team": username,
-                "blue_team": username,
-                "no_team": username
-            }}
-        )
-
-        # Add to selected team
-        if team == "red":
-            room_collection.update_one({"id": room_id}, {"$push": {"red_team": username}})
-        elif team == "blue":
-            room_collection.update_one({"id": room_id}, {"$push": {"blue_team": username}})
-        else:
-            room_collection.update_one({"id": room_id}, {"$push": {"no_team": username}})
-
-        # Ensure socket joins the room
-        join_room(room_id)
-
-        # Emit updated teams
-        updated = room_collection.find_one({"id": room_id})
-        emit('team_red_list', updated["red_team"], room=room_id)
-        emit('team_blue_list', updated["blue_team"], room=room_id)
-        emit('no_team_list', updated["no_team"], room=room_id)
-        emit('joined_team', {'room_id': room_id, 'team': team}, to=request.sid)
-
     @socketio.on('start_game', namespace='/lobby')
     def handle_start_game(data):
         room_id = data.get('room_id')
@@ -155,6 +104,7 @@ def register_room_handlers(socketio, user_collection, room_collection):
 
         print('Room id', room_id)
         print('Player:', player)
+        print("Connected users right before starting game:", connected_users)
 
         if not room_id or not player:
             print("[ERROR] Missing room_id or player in start_game")
@@ -168,25 +118,15 @@ def register_room_handlers(socketio, user_collection, room_collection):
         if room.get('owner') != player:
             print(f"[ERROR] {player} is not the owner and cannot start the game")
             return
-        
-        no_team_players = room.get('no_team', [])
-
-        if no_team_players:
-            print(f"[KICK] Removing players with no team: {no_team_players}")
-            room_collection.update_one(
-                {'id': room_id},
-                {'$set': {'no_team': []}}  # clear the no_team list
-            )
-            updated = room_collection.find_one({"id": room_id})
-            emit('team_red_list', updated["red_team"], room=room_id)
-            emit('team_blue_list', updated["blue_team"], room=room_id)
-            emit('no_team_list', updated["no_team"], room=room_id)
 
         print(f"[START_GAME] {player} is the owner. Adding all players...")
 
-        all_players = room.get('red_team', []) + room.get('blue_team', []) 
+        # Group players by team
+        red_blue_players = room.get('red_team', []) + room.get('blue_team', [])
+        no_team_players = room.get('no_team', [])
 
-        for username in all_players:
+        # Add only red/blue players to the battlefield
+        for username in red_blue_players:
             player_exists = any(p['id'] == username for p in room.get('players', []))
 
             if not player_exists:
@@ -198,7 +138,7 @@ def register_room_handlers(socketio, user_collection, room_collection):
                     team = 'blue'
                 else:
                     spawn_x, spawn_y = 50, 50
-                    team = 'no_team'
+                    team = 'no_team'  # fallback, but shouldn't happen
 
                 print(f"[START_GAME] Adding {username} ({team}) to battlefield.")
 
@@ -216,13 +156,26 @@ def register_room_handlers(socketio, user_collection, room_collection):
 
         join_room(room_id)
 
+        # Update room data after adding players
         updated_room = room_collection.find_one({'id': room_id})
         emit('player_positions', updated_room['players'], room=room_id)
-        # ✅ Now only emit 'game_started' to players actually in the battlefield
-        for player in updated_room['players']:
-            sid = get_sid(player['id'])
+
+        # 🚀 Notify players properly
+        print(f"[START_GAME] Emitting 'game_started' to red/blue players...")
+        for username in red_blue_players:
+            sid = get_sid(username)
             if sid:
                 socketio.emit('game_started', {'msg': 'The game has started!'}, to=sid)
+            else:
+                print(f"[WARNING] Could not find SID for {username}")
+
+        print(f"[START_GAME] Emitting 'kick_to_lobby' to no-team players...")
+        for username in no_team_players:
+            sid = get_sid(username)
+            if sid:
+                socketio.emit('kick_to_lobby', {'msg': 'You were not assigned a team, returning to lobby.'}, to=sid)
+            else:
+                print(f"[WARNING] Could not find SID for {username}")
 
     @socketio.on('disconnect', namespace='/lobby')
     def handle_disconnect():

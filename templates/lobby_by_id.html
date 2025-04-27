@@ -140,137 +140,143 @@
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 
     <script>
-
-            let playerId = null;
-
-
+    let playerId = null;
     const roomId = window.location.pathname.split("/").pop();
-   const socket = io('/lobby', {   // make sure connect to /lobby
-  query: {
-    page: 'team_select',
-    room_id: roomId
-  }
-});
+    const socket = io('/lobby', {   // Connect to /lobby namespace
+      query: {
+        page: 'team_select',
+        room_id: roomId
+      }
+    });
+
     let myTeam = null;  // Track which team the current user has joined
 
     socket.on('connect', () => {
-    socket.emit('page_ready', { page: 'team_select', room_id: roomId });
+      socket.emit('page_ready', { page: 'team_select', room_id: roomId });
 
-    fetch(`/api/roominfo?room_id=${roomId}`, { credentials: 'include' })
-      .then(res => res.json())
-      .then(data => {
-        if (data.owner === data.username) {
-          document.getElementById('startGameContainer').style.display = 'block';
-        }
+      fetch(`/api/roominfo?room_id=${roomId}`, { credentials: 'include' })
+        .then(res => res.json())
+        .then(data => {
+          if (data.owner === data.username) {
+            document.getElementById('startGameContainer').style.display = 'block';
+          }
+        });
+    });
+
+    socket.on('team_red_list', (data) => {
+      const redPlayerList = document.getElementById('redPlayerList');
+      redPlayerList.innerHTML = '';
+      (data || []).forEach(player => {
+        const li = document.createElement('li');
+        li.innerHTML = player;
+        redPlayerList.appendChild(li);
       });
-  });
+    });
 
-  socket.on('team_red_list', (data) => {
+    socket.on('team_blue_list', (data) => {
+      const bluePlayerList = document.getElementById('bluePlayerList');
+      bluePlayerList.innerHTML = '';
+      (data || []).forEach(player => {
+        const li = document.createElement('li');
+        li.innerHTML = player;
+        bluePlayerList.appendChild(li);
+      });
+    });
 
-  const redPlayerList = document.getElementById('redPlayerList');
-  redPlayerList.innerHTML = '';
+    socket.on('no_team_list', (data) => {
+      const noPlayerList = document.getElementById('noPlayerList');
+      noPlayerList.innerHTML = '';
+      (data || []).forEach(player => {
+        const li = document.createElement('li');
+        li.innerHTML = player;
+        noPlayerList.appendChild(li);
+      });
+    });
 
-  (data || []).forEach(player => {
-    const li = document.createElement('li');
-    li.innerHTML = player;
-    redPlayerList.appendChild(li);
-  });
-});
+    // ✅ When player successfully joins a team
+    socket.on('joined_team', ({ room_id, team }) => {
+      if (room_id === roomId) {
+        myTeam = team;
+        console.log(`[CLIENT] Joined team: ${team}`);
+      }
+    });
 
-  socket.on('team_blue_list', (data) => {
+    // ✅ Redirect to battlefield when game starts
+    socket.on('game_started', (data) => {
+      console.log('[CLIENT] Game started!');
+      window.location.href = `/battlefield?room=${roomId}`;
+    });
 
-  const bluePlayerList = document.getElementById('bluePlayerList');
-  bluePlayerList.innerHTML = '';
+    // ✅ Redirect back to lobby if kicked
+    socket.on('kick_to_lobby', (data) => {
+      console.log('[CLIENT] Kicked to lobby:', data.msg);
+      alert(data.msg);
+      socket.disconnect();
+      window.location.href = '/lobby';
+    });
 
-  (data || []).forEach(player => {
-    const li = document.createElement('li');
-    li.innerHTML = player;
-    bluePlayerList.appendChild(li);
-  });
-});
+    // ✅ Emit join_team
+    function joinTeam(team) {
+      console.log(`[CLIENT] Emitting join_team: ${team}`);
+      
+      socket.emit('join_team', { 
+        team: team, 
+        room_id: roomId 
+      });
 
-socket.on('no_team_list', (data) => {
-
-  const noPlayerList = document.getElementById('noPlayerList');
-  noPlayerList.innerHTML = '';
-
-  (data || []).forEach(player => {
-    const li = document.createElement('li');
-    li.innerHTML = player;
-    noPlayerList.appendChild(li);
-  });
-});
-
-
-  // When player successfully joins a team, store their team
-  socket.on('joined_team', ({ room_id, team }) => {
-    if (room_id === roomId) {
+      // After emitting join_team, optimistically update local myTeam
       myTeam = team;
     }
-  });
 
-  //redirect all players on game start
-  socket.on('game_started', (data) => {
-    console.log(data.msg);
-    window.location.href = `/battlefield?room=${roomId}`;
-  });
+    // ✅ When the owner clicks "Start Game"
+    function placeholder() {
+      if (!myTeam) {
+        alert("You must join a team before starting the game.");
+        return;
+      }
 
-  function joinTeam(team) {
-    socket.emit('join_team', { team: team, room_id: roomId });
-  }
+      fetch('/api/whoami', { credentials: 'include' })
+        .then(res => res.json())
+        .then(data => {
+          if (data.username) {
+            playerId = data.username;
+            console.log("[CLIENT] Starting game with:", { room_id: roomId, player: playerId });
 
-  function placeholder() {
-    if (!myTeam) {
-      alert("You must join a team before starting the game.");
-      return;
+            // ✅ Emit start_game signal
+            socket.emit('start_game', {
+              room_id: roomId,
+              player: playerId
+            });
+
+            // ✅ After a small delay, check if player successfully entered battlefield
+            setTimeout(() => {
+              fetch(`/api/players_in_room?room_id=${roomId}`, { credentials: 'include' })
+                .then(res => res.json())
+                .then(players => {
+                  const found = players.some(p => p.id === playerId);
+
+                  if (found) {
+                    console.log("[CLIENT] Found in players. Redirecting to battlefield...");
+                    window.location.href = `/battlefield?room=${roomId}`;
+                  } else {
+                    console.warn("[CLIENT] You were not added to battlefield. Returning to lobby...");
+                    alert("You were not placed into the battlefield. Returning to lobby.");
+                    socket.disconnect();  
+                    window.location.href = '/lobby';
+                  }
+                });
+            }, 500);
+
+          } else {
+            alert("You are not logged in.");
+            window.location.href = "/login";
+          }
+        })
+        .catch(err => {
+          console.error("[CLIENT] Error fetching username:", err);
+          alert("Failed to start the game. Please try again.");
+        });
     }
-
-    fetch('/api/whoami', {
-      credentials: 'include'
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (data.username) {
-          playerId = data.username;
-
-          console.log("Starting game with:", { room_id: roomId, player: playerId });
-
-          // Emit only after playerId is available
-          socket.emit('start_game', {
-            room_id: roomId,
-            player: playerId
-          });
-
-          // After short wait, check if player is in battlefield players
-          setTimeout(() => {
-            fetch(`/api/players_in_room?room_id=${roomId}`, {
-              credentials: 'include'
-            })
-              .then(res => res.json())
-              .then(players => {
-                const found = players.some(p => p.id === playerId);
-
-                if (found) {
-                  window.location.href = `/battlefield?room=${roomId}`;
-                } else {
-                  alert("You were not placed into the battlefield. Returning to lobby.");
-                  socket.disconnect();  
-                  window.location.replace = "/lobby";  
-                }
-              });
-          }, 500);
-        } else {
-          alert("You are not logged in.");
-          window.location.href = "/login";
-        }
-      })
-      .catch(err => {
-        console.error("Error fetching username:", err);
-        alert("Failed to start the game. Please try again.");
-      });
-  }
-
-</script>
-
+    </script>
 </body>
 </html>
