@@ -18,6 +18,11 @@ socketio = SocketIO(app, async_mode='threading')
 def inject_user():
     return dict(current_user=g.user)
 
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    return response
+
 app.config['SECRET_KEY'] = 'secret!'  # Replace with a secure key in production
 
 # Setup logging

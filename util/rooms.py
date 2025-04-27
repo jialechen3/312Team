@@ -1,4 +1,5 @@
 import uuid
+import html
 
 from flask_socketio import emit, join_room
 from flask import request
@@ -41,7 +42,7 @@ def register_room_handlers(socketio, user_collection, room_collection):
 
         new_room = {
             "id": room_id,
-            "room_name": room_name,
+            "room_name": html.escape(room_name),
             "owner": username,   
             "red_team": [],
             "blue_team": [],
