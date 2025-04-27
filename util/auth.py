@@ -119,6 +119,8 @@ def profile():
 
     user = g.user
 
+
+
     if request.method == 'POST':
         file = request.files.get('avatar')
         if file and allowed_file(file.filename):
@@ -134,6 +136,8 @@ def profile():
         return redirect(url_for('auth.profile'))
 
     # GET — render form
+
+
     return render_template('profile.html')
 
 
