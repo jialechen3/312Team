@@ -10,17 +10,30 @@ def register_room_handlers(socketio, user_collection, room_collection):
 
     @socketio.on('create_room', namespace='/lobby')
     def handle_create_room(room_name):
-        room_id = str(uuid.uuid4())  # generate unique ID
+        auth_token = request.cookies.get('auth_token')
+        if not auth_token:
+            print('[CREATE_ROOM] No auth token found')
+            return
+
+        user = user_collection.find_one({'auth_token': hash_token(auth_token)})
+        if not user:
+            print('[CREATE_ROOM] User not found')
+            return
+
+        username = user['username']
+        room_id = str(uuid.uuid4())
+
         new_room = {
             "id": room_id,
             "room_name": room_name,
+            "owner": username,   
             "red_team": [],
             "blue_team": [],
-            "no_team": []
+            "no_team": [],
+            "players": []        # This is important so battlefield has players list
         }
         room_collection.insert_one(new_room)
 
-        # emit all rooms with id + name
         all_rooms = [
             {"id": str(room["id"]), "name": room["room_name"]}
             for room in room_collection.find()
@@ -132,71 +145,100 @@ def register_room_handlers(socketio, user_collection, room_collection):
         emit('team_blue_list', updated["blue_team"], room=room_id)
         emit('no_team_list', updated["no_team"], room=room_id)
         emit('joined_team', {'room_id': room_id, 'team': team}, to=request.sid)
+    @socketio.on('am_i_owner', namespace='/lobby')
+    def handle_am_i_owner(data):
+        room_id = data.get('room_id')
+        auth_token = request.cookies.get('auth_token')
+
+        if not auth_token:
+            emit('owner_status', {'is_owner': False})
+            return
+
+        user = user_collection.find_one({'auth_token': hash_token(auth_token)})
+        if not user:
+            emit('owner_status', {'is_owner': False})
+            return
+
+        username = user['username']
+        room = room_collection.find_one({'id': room_id})
+
+        if not room:
+            emit('owner_status', {'is_owner': False})
+            return
+
+        if username == room.get('owner'):
+            emit('owner_status', {'is_owner': True})
+        else:
+            emit('owner_status', {'is_owner': False})
 
     @socketio.on('start_game', namespace='/lobby')
     def handle_start_game(data):
         room_id = data.get('room_id')
-        player = data.get('player')
 
-        print('Room id', room_id)
-        print('Player:', player)
-
-        if not room_id or not player:
-            print("[ERROR] Missing room_id or player in start_game")
+        auth_token = request.cookies.get('auth_token')
+        if not auth_token:
+            print('[START_GAME] No auth token')
             return
+
+        user = user_collection.find_one({'auth_token': hash_token(auth_token)})
+        if not user:
+            print('[START_GAME] User not found')
+            return
+
+        username = user['username']
 
         room = room_collection.find_one({'id': room_id})
         if not room:
-            print(f"[ERROR] Room '{room_id}' not found")
+            print(f"[START_GAME] Room {room_id} not found")
             return
 
-        # ✅ Find the player's team
-        team = None
-        if player in room.get("red_team", []):
-            team = "red"
-        elif player in room.get("blue_team", []):
-            team = "blue"
-        elif player in room.get("no_team", []):
-            team = "no_team"
+        if username != room.get('owner'):
+            print(f"[START_GAME] {username} is not the owner of room {room_id}")
+            return  # ❌ Only owner can start
 
-        if not team:
-            print(f"[ERROR] Player {player} not found in any team")
-            team = "no_team"
+        print(f"[START_GAME] {username} (owner) is starting the game for room {room_id}")
 
-        # ✅ Set spawn position based on team
-        if team == "red":
-            spawn_x = 97
-            spawn_y = 2
-        elif team == "blue":
-            spawn_x = 2
-            spawn_y = 97
-        else:
-            spawn_x = 50
-            spawn_y = 50
+        # ✅ Loop through all players on red and blue teams
+        players_to_start = room.get('red_team', []) + room.get('blue_team', [])
 
-        # ✅ Check if player already exists inside players array
-        player_exists = any(p['id'] == player for p in room.get('players', []))
+        battlefield_players = []
 
-        if not player_exists:
-            print(f"[START_GAME] Adding player {player} into battlefield players list")
+        for player in players_to_start:
+            # Determine spawn position
+            if player in room.get('red_team', []):
+                spawn_x, spawn_y = 97, 2
+                team = "red"
+            else:
+                spawn_x, spawn_y = 2, 97
+                team = "blue"
+
+            # Check if player already exists in players list (shouldn't, but safe check)
+            if any(p['id'] == player for p in room.get('players', [])):
+                print(f"[START_GAME] {player} already exists, skipping")
+                continue
+
+            # Prepare player data
+            battlefield_players.append({
+                'id': player,
+                'x': spawn_x,
+                'y': spawn_y,
+                'team': team
+            })
+
+        # Push all players at once
+        if battlefield_players:
             room_collection.update_one(
                 {'id': room_id},
-                {'$push': {'players': {
-                    'id': player,
-                    'x': spawn_x,
-                    'y': spawn_y,
-                    'team': team
-                }}}
+                {'$push': {'players': {'$each': battlefield_players}}}
             )
-        else:
-            print(f"[START_GAME] Player {player} already exists in battlefield players list")
 
-        # ✅ Important: ensure they JOIN the battlefield WebSocket room
-        join_room(room_id)
-
-        # ✅ Emit updated players list
+        # Emit updated players
         updated_room = room_collection.find_one({'id': room_id})
         emit('player_positions', updated_room['players'], room=room_id)
+
+        # Optionally, tell frontend: game started
+        emit('game_started', room=room_id)
+
 
     @socketio.on('disconnect', namespace='/lobby')
     def handle_disconnect():
