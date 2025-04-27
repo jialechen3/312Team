@@ -9,6 +9,7 @@
       --ui-pad: 6px 16px;
       --ui-br : 12px;
     }
+
     /* ---------- page + map canvas ---------- */
     body{
       margin:0;padding:0;
@@ -22,6 +23,7 @@
       background:#1e1e2f;border-radius:12px;box-shadow:0 0 15px rgba(0,0,0,.5);
       position:relative;z-index:10;
     }
+
     /* ---------- HUD ---------- */
     #scoreboard,#roundSmall{
       background:var(--ui-bg);padding:var(--ui-pad);border-radius:var(--ui-br);
@@ -43,7 +45,7 @@
 </head>
 <body>
 
-<!-- live team count (updates in JS) -->
+<!-- live team count (updates via JS) -->
 <div id="scoreboard">
   <span style="color:#ff5050;">🔴 Red <span id="redLive">0</span></span>
   <span style="color:#4ea1ff;">🔵 Blue <span id="blueLive">0</span></span>
@@ -56,73 +58,85 @@
 <canvas id="game" width="1200" height="750"></canvas>
 
 <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+
 <script>
-/* ───────── connection basics ───────── */
+/* ───────────────────────────────── socket connection ───────────────── */
 const canvas = document.getElementById('game');
 const ctx    = canvas.getContext('2d');
-const socket = io('/battlefield', { query:{page:'battlefield'} });
+const socket = io('/battlefield', { query:{ page:'battlefield' } });
 
-/* ───────── UI elements ─────────────── */
+/* ─────────────────────────────── HUD elements ─────────────────────── */
 const roundBanner = document.getElementById('roundBanner');
 const roundSmall  = document.getElementById('roundSmall');
 const redLiveEl   = document.getElementById('redLive');
 const blueLiveEl  = document.getElementById('blueLive');
 
-/* ───────── round-UI helpers ───────────*/
-let currentRound = 0, roundTimeLeft = 0, roundTimerId = null;
+/* ───────────────────────────── Round-UI helpers ───────────────────── */
+let currentRound   = 0;
+let currentTaggers = '';   // "red" | "blue"
+let roundTimeLeft  = 0;
+let roundTimerId   = null;
 
-function flashNumber(txt){                // prep countdown 5…1
+/* flash a single digit (“5”…“1”) for 0.9 s */
+function flashNumber(txt){
   roundBanner.textContent = txt;
-  roundBanner.style.display='block';
+  roundBanner.style.display = 'block';
   setTimeout(()=>{ roundBanner.style.display='none'; }, 900);
 }
-function flashBanner(txt, ms=null){       // generic banner
+
+/* general banner helper — if ms = null banner stays until you hide it */
+function flashBanner(txt, ms = 3000){
   roundBanner.textContent = txt;
-  roundBanner.style.display='block';
-  if(ms){ setTimeout(()=>{ roundBanner.style.display='none'; }, ms); }
+  roundBanner.style.display = 'block';
+  if(ms !== null) setTimeout(()=>{ roundBanner.style.display='none'; }, ms);
 }
+
+/* start / restart the corner countdown */
 function startCountdown(total){
   clearInterval(roundTimerId);
-  roundTimeLeft = total;  updateClock();
+  roundTimeLeft = total;
+  paintCorner();
   roundTimerId = setInterval(()=>{
-    roundTimeLeft--; updateClock();
+    roundTimeLeft--;
+    paintCorner();
     if(roundTimeLeft<=0) clearInterval(roundTimerId);
   },1000);
 }
-function updateClock(){
+
+/* paint “Round 1 · 01:57” (plus taggers during the break) */
+function paintCorner(){
   const m = String(Math.floor(roundTimeLeft/60)).padStart(2,'0');
   const s = String(roundTimeLeft%60).padStart(2,'0');
-  roundSmall.textContent = `Round ${currentRound} · ${m}:${s}`;
+  const tag = currentTaggers ? ` · Taggers: ${currentTaggers.toUpperCase()}` : '';
+  roundSmall.textContent = `Round ${currentRound}${tag} · ${m}:${s}`;
 }
 
-/* ───────── game constants + map ───────*/
-const urlParams = new URLSearchParams(window.location.search);
-const roomId    = urlParams.get('room');
+/* ───────────────────────────── Map constants ──────────────────────── */
+const roomId = new URLSearchParams(location.search).get('room');
 if(!roomId){ alert('Room ID missing'); throw new Error('No room id'); }
 
-const TILE_SIZE = 40, MAP_WIDTH=100, MAP_HEIGHT=100;
+const TILE_SIZE = 40, MAP_WIDTH = 100, MAP_HEIGHT = 100;
 const terrain = Array.from({length:MAP_HEIGHT},(_,y)=>
   Array.from({length:MAP_WIDTH},(_,x)=>{
-    if(y<5 && x>=MAP_WIDTH-5){
-      const inside = (x>=MAP_WIDTH-4&&x<=MAP_WIDTH-2)&&(y>=1&&y<=3);
+    if(y<5&&x>=MAP_WIDTH-5){
+      const inside=(x>=MAP_WIDTH-4&&x<=MAP_WIDTH-2)&&(y>=1&&y<=3);
       return inside?0:3;
     }
-    if(y>=MAP_HEIGHT-5 && x<5) return 2;
-    if((x+y)%17===0 && x>5&&x<MAP_WIDTH-6 && y>5&&y<MAP_HEIGHT-6) return 1;
+    if(y>=MAP_HEIGHT-5&&x<5) return 2;
+    if((x+y)%17===0&&x>5&&x<MAP_WIDTH-6&&y>5&&y<MAP_HEIGHT-6) return 1;
     return 0;
   })
 );
 
-/* ───────── player state ───────────────*/
+/* ───────────────────────────── player state ───────────────────────── */
 let playerId=null, players={}, deadPlayers={}, respawnTimers={}, pos={x:0,y:0};
 
-/* ───────── socket events ──────────────*/
+/* ───────────────────────────── socket events ──────────────────────── */
 socket.on('player_positions', list=>{
-  players={}; list.forEach(p=>{ players[p.id]=p; });
+  players={}; list.forEach(p=>players[p.id]=p);
+  if(players[playerId]) pos={x:players[playerId].x,y:players[playerId].y};
 
-  if(players[playerId]) pos={x:players[playerId].x, y:players[playerId].y};
-
-  redLiveEl.textContent  = list.filter(p=>p.team==='red').length;
+  redLiveEl .textContent = list.filter(p=>p.team==='red').length;
   blueLiveEl.textContent = list.filter(p=>p.team==='blue').length;
   draw();
 });
@@ -130,98 +144,105 @@ socket.on('player_positions', list=>{
 socket.on('player_tagged', ({target})=>{
   deadPlayers[target]=true; respawnTimers[target]=5;
   const t=setInterval(()=>{
-    respawnTimers[target]--; if(respawnTimers[target]<=0){
+    respawnTimers[target]--;
+    if(respawnTimers[target]<=0){
       clearInterval(t); delete respawnTimers[target]; deadPlayers[target]=false;
     }
   },1000);
 });
+
 socket.on('player_respawned', ({player})=>{
   deadPlayers[player]=false; delete respawnTimers[player];
   socket.emit('request_positions');
 });
 
-/* round / match events */
+/* ─── Round & match flow ─── */
+socket.on('round_prep', d=>{
+  flashNumber(d.seconds);
+  currentRound   = d.next_round;
+  currentTaggers = d.taggers;
+  roundTimeLeft  = d.seconds;
+  paintCorner();
+});
 socket.on('round_start', d=>{
-  currentRound=d.round; flashBanner(`ROUND ${currentRound}`,3000);
+  currentRound   = d.round;
+  currentTaggers = d.taggers;
+  flashBanner(`ROUND ${currentRound} – ${currentTaggers.toUpperCase()} TAGGERS`, 3000);
   startCountdown(d.duration);
 });
-socket.on('round_end',   d=>flashBanner(`${d.winner.toUpperCase()} WINS!`));
-socket.on('round_countdown', d=>flashNumber(d.seconds));
-socket.on('round_prep', d=>{
-  currentRound=d.next_round; roundTimeLeft=d.seconds;
-  flashNumber(d.seconds); updateClock();
+socket.on('round_end', d=>{
+  flashBanner(`⏱ Round ${d.round} over`, 3000);
 });
-socket.on('match_over', ({ winner }) => {
-  const nice = winner === 'red' ? 'Red Team Wins!' :
-               winner === 'blue' ? 'Blue Team Wins!' :
-               'Match Draw!';
-  flashBanner(`🏆 ${nice}`);   // stays on-screen until page change
+socket.on('match_over', d=>{
+  const msg = d.winner==='red'  ? 'Red Team Wins!'  :
+              d.winner==='blue' ? 'Blue Team Wins!' : 'Match Draw!';
+  flashBanner(`🏆 ${msg}`, null);   // stays until page change
 });
 
-/* ───────── login + join ───────────────*/
+/* ─────────────────────────── join & input ─────────────────────────── */
 fetch('/api/whoami',{credentials:'include'})
- .then(r=>r.json()).then(data=>{
-   if(!data.username){ window.location='/login'; return; }
-   playerId=data.username;
+ .then(r=>r.json()).then(d=>{
+   if(!d.username){ location='/login'; return; }
+   playerId=d.username;
    socket.emit('join_room',{room_id:roomId,player:playerId});
    setInterval(draw,1000/60);
  });
 
-/* ───────── input ───────────────*/
 document.addEventListener('keydown',e=>{
   if(!['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) return;
   socket.emit('move',{
-    roomId:roomId, player:playerId,
-    direction: e.key.replace('Arrow','').toLowerCase()
+    roomId, player:playerId,
+    direction:e.key.replace('Arrow','').toLowerCase()
   });
 });
 
-/* ───────── rendering helpers ─────────*/
-function drawGrid(viewX,viewY){
+/* ────────────────────────── rendering helpers ─────────────────────── */
+function drawGrid(vx,vy){
   const cols=Math.ceil(canvas.width/TILE_SIZE);
   const rows=Math.ceil(canvas.height/TILE_SIZE);
   for(let x=0;x<cols;x++)for(let y=0;y<rows;y++){
-    const wx=Math.floor(viewX+x), wy=Math.floor(viewY+y);
-    if(wx>=MAP_WIDTH||wy>=MAP_HEIGHT)continue;
-    ctx.fillStyle=
-      terrain[wy][wx]===1?'gray':
-      terrain[wy][wx]===2?'blue':
-      terrain[wy][wx]===3?'red':'#1e1e2f';
+    const wx=Math.floor(vx+x), wy=Math.floor(vy+y);
+    if(wx>=MAP_WIDTH||wy>=MAP_HEIGHT) continue;
+    ctx.fillStyle =
+      terrain[wy][wx]===1?'gray' :
+      terrain[wy][wx]===2?'blue' :
+      terrain[wy][wx]===3?'red'  : '#1e1e2f';
     ctx.fillRect(x*TILE_SIZE,y*TILE_SIZE,TILE_SIZE,TILE_SIZE);
-    ctx.strokeStyle='#222'; ctx.strokeRect(x*TILE_SIZE,y*TILE_SIZE,TILE_SIZE,TILE_SIZE);
+    ctx.strokeStyle='#222';
+    ctx.strokeRect(x*TILE_SIZE,y*TILE_SIZE,TILE_SIZE,TILE_SIZE);
   }
 }
-function drawPlayers(viewX,viewY){
+function drawPlayers(vx,vy){
   for(const id in players){
-    const p=players[id];
-    const sx=(p.x-viewX)*TILE_SIZE, sy=(p.y-viewY)*TILE_SIZE, size=35;
-    /* fill */
-    ctx.fillStyle = deadPlayers[id]?'gray':
-      p.team==='red' ? 'red' :
-      p.team==='blue'? 'blue' : 'gray';
+    const p = players[id];
+    const sx = (p.x-vx)*TILE_SIZE, sy = (p.y-vy)*TILE_SIZE, size=35;
+
+    ctx.fillStyle = deadPlayers[id] ? 'gray' :
+      p.team==='red' ? 'red' : p.team==='blue' ? 'blue' : 'gray';
     ctx.fillRect(sx,sy,size,size);
-    /* you */
+
     if(id===playerId){
       ctx.strokeStyle='gold'; ctx.lineWidth=3;
       ctx.strokeRect(sx,sy,size,size);
     }
-    /* name */
+
     ctx.fillStyle='white'; ctx.font='12px Arial';
     ctx.fillText(id, sx, sy-5);
-    /* respawn timer */
+
     if(deadPlayers[id]){
       ctx.fillStyle='yellow';
-      const t = respawnTimers[id]!==undefined?`Respawn:${respawnTimers[id]}`:'DEAD';
-      ctx.fillText(t, sx, sy+size+10);
+      const txt = respawnTimers[id]!==undefined ? `Respawn:${respawnTimers[id]}` : 'DEAD';
+      ctx.fillText(txt, sx, sy+size+10);
     }
   }
 }
 function draw(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
-  const viewX=Math.max(0,Math.min(pos.x - canvas.width/(TILE_SIZE*2), MAP_WIDTH - canvas.width/TILE_SIZE));
-  const viewY=Math.max(0,Math.min(pos.y - canvas.height/(TILE_SIZE*2),MAP_HEIGHT - canvas.height/TILE_SIZE));
-  drawGrid(viewX,viewY); drawPlayers(viewX,viewY);
+  const vx=Math.max(0,Math.min(pos.x-canvas.width/(TILE_SIZE*2), MAP_WIDTH-canvas.width/TILE_SIZE));
+  const vy=Math.max(0,Math.min(pos.y-canvas.height/(TILE_SIZE*2),MAP_HEIGHT-canvas.height/TILE_SIZE));
+  drawGrid(vx,vy); drawPlayers(vx,vy);
 }
 </script>
 </body>
 </html>
+

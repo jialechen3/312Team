@@ -13,7 +13,7 @@ from typing     import Dict
 from flask_socketio import SocketIO
 
 # ─── Tunables ────────────────────────────────────────────
-ROUND_TIME_SEC = 10          # 2-minute rounds
+ROUND_TIME_SEC = 60          # 2-minute rounds
 PAUSE_BETWEEN  = 5            # 5-second prep banner
 MAX_ROUNDS     = 2
 
