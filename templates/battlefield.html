@@ -75,14 +75,24 @@ socket.on('player_positions', (playerList) => {
   console.log("[SOCKET] Received player_positions:", playerList);
 
   players = {};
-playerList.forEach(p => {
-  players[p.id] = {
-    x:     p.x,
-    y:     p.y,
-    team:  p.team,
-    avatar:p.avatar
-  };
-});
+  playerList.forEach(p => {
+    players[p.id] = {
+      x:     p.x,
+      y:     p.y,
+      team:  p.team,
+      avatar:p.avatar
+    };
+
+    // ⬇️ move this inside forEach
+    const src = p.avatar;
+    if (src && !avatarCache[src] && !avatarFailed[src]) {
+      const img = new Image();
+      img.onload = () => draw();  
+      img.onerror = () => { avatarFailed[src] = true; draw(); };
+      img.src = src;
+      avatarCache[src] = img;
+    }
+  });
 
   if (players[playerId]) {
     pos = { x: players[playerId].x, y: players[playerId].y };
@@ -91,6 +101,7 @@ playerList.forEach(p => {
 
   draw();
 });
+
 
 // New listener for tags
 socket.on('player_tagged', ({ tagger, target }) => {
@@ -187,38 +198,68 @@ const avatarCache = {};
 const avatarFailed = {};     // <-- new map
 
 function drawPlayers(viewX, viewY) {
-  const size = 35;
+  const size = 40;
   for (const id in players) {
     const p = players[id];
     const screenX = (p.x - viewX) * TILE_SIZE;
     const screenY = (p.y - viewY) * TILE_SIZE;
 
-    // load once
     const src = p.avatar;
-    if (src && !avatarCache[src] && !avatarFailed[src]) {
-      const img = new Image();
-      img.onload  = () => draw();
-      img.onerror = () => { avatarFailed[src] = true; draw(); };   // <- mark failed
-      img.src = src;
-      avatarCache[src] = img;
-    }
     const img = avatarCache[src];
+    const isDead = deadPlayers[id];
 
-    // outline colour
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = (p.team === 'red') ? 'red'
-                     : (p.team === 'blue') ? 'blue' : 'gray';
-
-    // draw avatar or fallback square
+    // --- Drawing the avatar or fallback ---
     if (img && img.complete && !avatarFailed[src]) {
+      ctx.save();
+
+      if (isDead) {
+        ctx.filter = 'grayscale(100%) brightness(80%)';
+      } else if (p.team === 'red') {
+        ctx.filter = 'brightness(110%) sepia(30%) hue-rotate(-10deg)';
+      } else if (p.team === 'blue') {
+        ctx.filter = 'brightness(110%) sepia(30%) hue-rotate(200deg)';
+      } else {
+        ctx.filter = 'none';
+      }
+
       ctx.drawImage(img, screenX, screenY, size, size);
+      ctx.restore();
     } else {
-      ctx.fillStyle = '#333';
+      // fallback square
+      ctx.fillStyle = isDead ? 'gray'
+                  : (p.team === 'red') ? 'red'
+                  : (p.team === 'blue') ? 'blue'
+                  : 'gray';
       ctx.fillRect(screenX, screenY, size, size);
     }
+
+    // Outline
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = (p.team === 'red') ? 'red'
+                    : (p.team === 'blue') ? 'blue' : 'gray';
     ctx.strokeRect(screenX, screenY, size, size);
 
-    // … username / self-highlight / respawn timer …
+    if (id === playerId) {
+      ctx.strokeStyle = 'gold';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(screenX, screenY, size, size);
+    }
+
+    // Username
+    ctx.fillStyle = 'white';
+    ctx.font = '12px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(id, screenX + size / 2, screenY - 5);
+
+    // Respawn Timer
+    if (deadPlayers[id]) {
+      ctx.fillStyle = 'yellow';
+      if (respawnTimers[id] !== undefined) {
+        ctx.fillText(`Respawn: ${respawnTimers[id]}`, screenX + size / 2, screenY + size + 15);
+      } else {
+        ctx.fillText('DEAD', screenX + size / 2, screenY + size + 15);
+      }
+    }
   }
 }
 

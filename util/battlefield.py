@@ -110,6 +110,11 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
                     print(f"[BLOCKED] {player} tried to tag teammate {other_player}")
                     continue
 
+                # ⬇️ NEW: Prevent tagging already dead players
+                if player_status.get(room_id, {}).get(other_player, {}).get('status') == "dead":
+                    print(f"[BLOCKED] {player} tried to tag already dead {other_player}")
+                    continue
+
                 print(f"[TAG] {player} tagged {other_player}!")
                 emit('player_tagged', {
                     "tagger": player,
