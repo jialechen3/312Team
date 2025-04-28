@@ -13,7 +13,7 @@ from util.database import user_collection, room_collection
 from util.rooms import register_room_handlers
 
 app = Flask(__name__)
-socketio = SocketIO(app, async_mode='gevent')
+socketio = SocketIO(app, async_mode='threading')
 @app.context_processor
 def inject_user():
     return dict(current_user=g.user)
