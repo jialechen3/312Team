@@ -52,3 +52,11 @@ docker compose up
 
 This will build and start the app with Docker and Docker Compose.
 
+
+
+
+
+To find the log file
+
+
+It is located in logs folder in the root after running the localhost
