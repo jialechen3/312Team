@@ -80,11 +80,22 @@
     .login-box a:hover {
       text-decoration: underline;
     }
+
+      .error-message {
+    color: #ff4c4c;   /* 🔥 Bright red text */
+    margin-bottom: 15px;
+    font-size: 14px;
+    font-weight: bold;
+  }
   </style>
 </head>
 <body>
   <div class="login-box">
     <h1>Join the Battle</h1>
+      {% if error %}
+  <div class="error-message">{{ error }}</div>
+{% endif %}
+
     <form action="/register" method="POST">
       <input type="text" name="username" placeholder="Create a username" required>
       <input type="password" name="password" placeholder="Create a password" required>
