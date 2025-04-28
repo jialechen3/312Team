@@ -42,7 +42,13 @@ You'll get a chance to be a tagger in the second round.
 After two rounds, the team with the most players wins! 🏆
 
 ▶️ Running the App Locally
+
+
 docker compose build
+
+
 docker compose up
+
+
 This will build and start the app with Docker and Docker Compose.
 
