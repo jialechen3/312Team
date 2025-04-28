@@ -13,7 +13,7 @@ from util.database import user_collection, room_collection
 from util.rooms import register_room_handlers
 
 app = Flask(__name__)
-socketio = SocketIO(app, async_mode='gevent')
+socketio = SocketIO(app, async_mode='threading')
 @app.context_processor
 def inject_user():
     return dict(current_user=g.user)
@@ -52,10 +52,17 @@ register_battlefield_handlers(socketio, user_collection, room_collection)
 # Routes
 @app.route('/')
 def index():
+    print('Get page')
     return render_template('login.html')
+
+@app.route('/health')
+def health_check():
+    return jsonify({"status": "ok"}), 200
+
 
 @app.route('/lobby')
 def lobby():
+    print('Get page')
     return render_template('lobby.html')
 
 @app.route('/lobby/<lobby_id>')

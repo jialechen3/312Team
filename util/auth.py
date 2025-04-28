@@ -46,6 +46,7 @@ def register():
     return resp
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
+    print('login')
     if request.method == 'GET':
         return render_template('login.html')
     data = request.form  # or request.get_json() if using JSON body

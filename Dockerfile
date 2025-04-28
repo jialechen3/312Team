@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 EXPOSE 8116
 
 
-RUN pip install --no-cache-dir gunicorn
+RUN pip install --no-cache-dir -r requirements.txt gunicorn
 
 # Run the Flask app using flask_socketio
-CMD ["gunicorn", "-k", "geventwebsocket.gunicorn.workers.GeventWebSocketWorker", "-w", "1", "server:app", "--bind", "0.0.0.0:8116"]
+CMD ["python", "server.py"]

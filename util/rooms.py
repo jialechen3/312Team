@@ -81,7 +81,7 @@ def register_room_handlers(socketio, user_collection, room_collection):
             for room in room_collection.find({"game_started": False})
         ]
         emit('room_list', all_rooms, broadcast=True)
-
+        print('room created')
 
     @socketio.on('get_rooms', namespace='/lobby')
     def handle_get_rooms():
