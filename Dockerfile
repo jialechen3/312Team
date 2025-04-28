@@ -11,7 +11,7 @@ COPY . .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Expose port Flask will run on
-EXPOSE 8080
+EXPOSE 8116
 
 # Run the Flask app using flask_socketio
 CMD ["python", "server.py"]
