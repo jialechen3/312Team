@@ -3,12 +3,12 @@ services:
   web:
     build: .
     ports:
-      - "8080:8080"
+      - "8116:8116"
     volumes:
       - .:/app
       - ./logs:/mmogame/logs
     environment:
-      - FLASK_RUN_PORT=8080
+      - FLASK_RUN_PORT=8116
       - DOCKER_DB=true
     depends_on:
       - mongo  
@@ -17,8 +17,6 @@ services:
     image: mongo:6.0
     container_name: mongo
     restart: always
-    ports:
-      - "27017:27017"
     volumes:
       - mongo-data:/data/db
 
