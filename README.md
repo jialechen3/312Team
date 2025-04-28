@@ -1,18 +1,48 @@
-# 🕹️ Mini MMO Game (Team Project)
+🕹️ Mini MMO Game (Team Project)
 
-This project is a **mini multiplayer online game** built with:
 
-- **Framework**: Flask  
-- **Database**: MongoDB  
-- **Networking**: WebSockets (via Flask-SocketIO)
 
----
 
-## 🚀 Getting Started
-go the  main branch, other branch are not good for testing!
+This is a mini multiplayer online game where players join teams and compete by tagging opponents.
+Built with:
 
-### ▶️ Run the App
+Framework: Flask
 
-```bash
+Database: MongoDB
+
+Networking: WebSockets (Flask-SocketIO)
+
+🚀 Getting Started
+Checkout the main branch to run and test the game.
+
+Other branches are outdated or experimental.
+
+🛠️ Deployment
+To deploy the production version, checkout the deploy-2.0 branch.
+
+The deployed domain is:
+👉 https://jchen544.cse312.dev
+
+🕹️ How to Play
+Create your own lobby.
+
+Invite your friends to join.
+
+Pick your team
+
+Start the game as the lobby owner.
+
+Move your player using the arrow keys.
+
+If you are a tagger, tag opponents to turn them into your team.
+
+If you are being chased, run away!
+You'll get a chance to be a tagger in the second round.
+
+After two rounds, the team with the most players wins! 🏆
+
+▶️ Running the App Locally
 docker compose build
 docker compose up
+This will build and start the app with Docker and Docker Compose.
+
