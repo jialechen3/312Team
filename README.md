@@ -9,6 +9,7 @@ This project is a **mini multiplayer online game** built with:
 ---
 
 ## 🚀 Getting Started
+go the  main branch, other branch are not good for testing!
 
 ### ▶️ Run the App
 
