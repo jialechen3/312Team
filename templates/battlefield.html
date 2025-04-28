@@ -99,13 +99,31 @@
 
 <!-- map canvas -->
 <canvas id="game" width="1200" height="750"></canvas>
-
+<canvas
+  id="minimap"
+  width="200"
+  height="200"
+  style="
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    background: rgba(0, 0, 0, 0.5);
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.7);
+  ">
+</canvas>
 <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const socket = io('/battlefield', { query: { page: 'battlefield' } });
+const minimap = document.getElementById('minimap');
+
+const minimapTerrain = document.createElement('canvas');
+minimapTerrain.width = minimap.width;
+minimapTerrain.height = minimap.height;
+const minimapTerrainCtx = minimapTerrain.getContext('2d');
 const avatarCache = {};
 const avatarFailed = {};
 
@@ -196,6 +214,7 @@ socket.on('player_positions', list => {
   redLiveEl.textContent = list.filter(p => p.team === 'red').length;
   blueLiveEl.textContent = list.filter(p => p.team === 'blue').length;
   draw();
+  drawMinimap(players);
 });
 
 socket.on('player_tagged', ({ target }) => {
@@ -284,7 +303,6 @@ document.addEventListener('keydown', e => {
 
   // 🔥 Block movement if next tile is a wall
   if (terrain[nextY][nextX] === 1) {
-    console.log('Blocked by wall at', nextX, nextY);
     return;
   }
 
@@ -298,7 +316,6 @@ document.addEventListener('keydown', e => {
 
 
 socket.on('load_terrain', (data) => {
-  console.log('[Terrain loaded]', data);
 
   if (Array.isArray(data.terrain)) {
     for (let y = 0; y < MAP_HEIGHT; y++) {
@@ -306,7 +323,9 @@ socket.on('load_terrain', (data) => {
         terrain[y][x] = data.terrain[y][x];
       }
     }
-    draw();  // 🔥 redraw the map after loading
+    draw();
+    drawMinimapTerrain();  // 🆕 Draw background only once
+
   }
 });
 
@@ -379,6 +398,57 @@ function draw() {
   drawGrid(vx, vy);
   drawPlayers(vx, vy);
 }
+
+
+
+
+
+const miniCtx = minimap.getContext('2d');
+function drawMinimap(players) {
+  miniCtx.clearRect(0, 0, minimap.width, minimap.height);
+
+  // 🖼️ First, draw cached terrain
+  miniCtx.drawImage(minimapTerrain, 0, 0);
+
+  // 🧍 Then draw players
+  Object.values(players).forEach(player => {
+    let miniX = (player.x / MAP_WIDTH) * minimap.width;
+    let miniY = (player.y / MAP_HEIGHT) * minimap.height;
+
+    miniCtx.beginPath();
+    let radius = (player.id === playerId) ? 5 : 3;
+    miniCtx.arc(miniX, miniY, radius, 0, Math.PI * 2);
+    miniCtx.fillStyle = player.team === 'red' ? '#ff5050' :
+                        player.team === 'blue' ? '#4ea1ff' : '#ffffff';
+    miniCtx.fill();
+  });
+}
+
+function drawMinimapTerrain() {
+  minimapTerrainCtx.clearRect(0, 0, minimap.width, minimap.height);
+
+  const rows = terrain.length;
+  const cols = terrain[0].length;
+  const cellWidth = minimap.width / cols;
+  const cellHeight = minimap.height / rows;
+
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      if (terrain[y][x] === 1) { // Wall
+        minimapTerrainCtx.fillStyle = '#888';
+      } else if (terrain[y][x] === 2) { // Blue team safe zone
+        minimapTerrainCtx.fillStyle = 'rgba(78, 161, 255, 0.4)';
+      } else if (terrain[y][x] === 3) { // Red team safe zone
+        minimapTerrainCtx.fillStyle = 'rgba(255, 80, 80, 0.4)';
+      } else {
+        continue;
+      }
+      minimapTerrainCtx.fillRect(x * cellWidth, y * cellHeight, cellWidth, cellHeight);
+    }
+  }
+}
+
+
 </script>
 
 </body>

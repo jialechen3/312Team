@@ -51,12 +51,10 @@ def register_room_handlers(socketio, user_collection, room_collection):
     def handle_create_room(room_name):
         auth_token = request.cookies.get('auth_token')
         if not auth_token:
-            print('[CREATE_ROOM] No auth token found')
             return
 
         user = user_collection.find_one({'auth_token': hash_token(auth_token)})
         if not user:
-            print('[CREATE_ROOM] User not found')
             return
 
         username = user['username']
@@ -111,7 +109,6 @@ def register_room_handlers(socketio, user_collection, room_collection):
             auth_token = request.cookies.get('auth_token')
             user = user_collection.find_one({'auth_token': hash_token(auth_token)})
             if not user:
-                print('User not found or not logged in')
                 return
 
             username = user['username']
@@ -126,7 +123,6 @@ def register_room_handlers(socketio, user_collection, room_collection):
 
             room = room_collection.find_one({"id": room_id})
             if not room:
-                print(f"Room {room_id} does not exist")
                 return
 
             if username not in room["red_team"] + room["blue_team"] + room["no_team"]:
@@ -148,21 +144,17 @@ def register_room_handlers(socketio, user_collection, room_collection):
 
         auth_token = request.cookies.get('auth_token')
         if not auth_token:
-            print('[JOIN_TEAM] Not logged in, no auth_token')
             return
 
         user = user_collection.find_one({'auth_token': hash_token(auth_token)})
         if not user:
-            print('[JOIN_TEAM] User not found')
             return
 
         username = user['username']
         room = room_collection.find_one({"id": room_id})
         if not room:
-            print(f"[JOIN_TEAM] Room {room_id} not found")
             return
 
-        print(f"[JOIN_TEAM] {username} joining {team} in room {room_id}")
 
         # Remove from all teams
         room_collection.update_one(
@@ -224,26 +216,21 @@ def register_room_handlers(socketio, user_collection, room_collection):
 
         auth_token = request.cookies.get('auth_token')
         if not auth_token:
-            print('[START_GAME] No auth token')
             return
 
         user = user_collection.find_one({'auth_token': hash_token(auth_token)})
         if not user:
-            print('[START_GAME] User not found')
             return
 
         username = user['username']
 
         room = room_collection.find_one({'id': room_id})
         if not room:
-            print(f"[START_GAME] Room {room_id} not found")
             return
 
         if username != room.get('owner'):
-            print(f"[START_GAME] {username} is not the owner of room {room_id}")
             return  # ❌ Only owner can start
 
-        print(f"[START_GAME] {username} (owner) is starting the game for room {room_id}")
 
         # ✅ Loop through all players on red and blue teams
         players_to_start = room.get('red_team', []) + room.get('blue_team', [])
@@ -261,7 +248,6 @@ def register_room_handlers(socketio, user_collection, room_collection):
 
             # Check if player already exists in players list (shouldn't, but safe check)
             if any(p['id'] == player for p in room.get('players', [])):
-                print(f"[START_GAME] {player} already exists, skipping")
                 continue
 
             # Prepare player data
@@ -320,10 +306,8 @@ def register_room_handlers(socketio, user_collection, room_collection):
         username = connected_users.pop(sid, None)
 
         if not username:
-            print(f"[DISCONNECT] SID {sid} not found in connected_users")
             return
 
-        print(f"[DISCONNECT] Cleaning up user {username}")
 
         # ✅ 1. First, find rooms BEFORE you modify the DB
         rooms = list(room_collection.find({
@@ -348,19 +332,16 @@ def register_room_handlers(socketio, user_collection, room_collection):
         for room in rooms:
             room_id = room["id"]
             updated = room_collection.find_one({"id": room_id})
-            print(f"[DISCONNECT] Emitting team updates for room {room_id}")
             socketio.emit('team_red_list', updated["red_team"], room=room_id)
             socketio.emit('team_blue_list', updated["blue_team"], room=room_id)
             socketio.emit('no_team_list', updated["no_team"], room=room_id)
             _emit_team_counts(room_id)
 
-        print(f"[DISCONNECT] {username} removed from all rooms.")
 
     @socketio.on('connect', namespace='/lobby')
     def handle_connect():
         page = request.args.get('page')
         room_id = request.args.get('room_id')
-        print(f"[CONNECT] {request.sid} connected from page: {page}, room: {room_id}")
 
 
 # server-side battlefield terrain generation (Python)

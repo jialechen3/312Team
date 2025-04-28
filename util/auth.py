@@ -17,35 +17,33 @@ auth_bp = Blueprint('auth', __name__)
 def register():
     if request.method == 'GET':
         return render_template('register.html')
+
     data = request.form
     user = data.get('username')
     password = data.get('password')
 
     if not user or not password:
-        return "Missing credentials", 400
+        return render_template('register.html', error="Missing credentials")
 
-    if not validate_password(password):  # define this as needed
-        return "Bad password", 400
+    if not validate_password(password):
+        return render_template('register.html', error="Password must be at least 8 characters, contain uppercase, lowercase, number, and special character.")
 
     if user_collection.find_one({"username": user}):
-        return "Username already taken", 400
+        return render_template('register.html', error="Username already taken")
 
     hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
     user_id = str(uuid.uuid4())
-
-    print(f'please for the love of god')
 
     user_collection.insert_one({
         "id": user_id,
         "username": user,
         "password": hashed_pw,
-        "auth_token": None       # placeholder for session token
+        "auth_token": None
     })
 
     resp = make_response(redirect("/"))
     resp.set_cookie("session", user_id)
     return resp
-
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'GET':
