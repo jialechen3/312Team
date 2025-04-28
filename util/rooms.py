@@ -62,6 +62,9 @@ def register_room_handlers(socketio, user_collection, room_collection):
         username = user['username']
         room_id = str(uuid.uuid4())
 
+        # 🔥 Generate randomized terrain
+        generated_terrain = generate_battlefield_terrain()
+
         new_room = {
             "id": room_id,
             "room_name": room_name,
@@ -69,21 +72,24 @@ def register_room_handlers(socketio, user_collection, room_collection):
             "red_team": [],
             "blue_team": [],
             "no_team": [],
-            "players": []        # This is important so battlefield has players list
+            "players": [],
+            "game_started": False,
+            "terrain": generated_terrain  # 🔥 store it in MongoDB
         }
         room_collection.insert_one(new_room)
 
         all_rooms = [
             {"id": str(room["id"]), "name": html.escape(room["room_name"])}
-            for room in room_collection.find()
+            for room in room_collection.find({"game_started": False})
         ]
         emit('room_list', all_rooms, broadcast=True)
+
 
     @socketio.on('get_rooms', namespace='/lobby')
     def handle_get_rooms():
         all_rooms = [
             {"id": str(room["id"]), "name": html.escape(room["room_name"])}
-            for room in room_collection.find()
+            for room in room_collection.find({"game_started": False})
         ]
         emit('room_list', all_rooms)
 
@@ -270,7 +276,10 @@ def register_room_handlers(socketio, user_collection, room_collection):
         if battlefield_players:
             room_collection.update_one(
                 {'id': room_id},
-                {'$push': {'players': {'$each': battlefield_players}}}
+                {
+                    '$push': {'players': {'$each': battlefield_players}},
+                    '$set': {'game_started': True}  # ⬅️ Update here
+                }
             )
 
         # Emit updated players
@@ -292,11 +301,16 @@ def register_room_handlers(socketio, user_collection, room_collection):
                 "avatar": f"/static/avatars/{avatar_fn}"
             })
 
+        all_rooms = [
+            {"id": str(room["id"]), "name": html.escape(room["room_name"])}
+            for room in room_collection.find({"game_started": False})
+        ]
+        socketio.emit('room_list', all_rooms, namespace='/lobby')
+
         emit('player_positions', players_out, room=room_id)
 
         # Optionally, tell frontend: game started
         emit('game_started', room=room_id)
-
         kick_off_round_system(socketio, room_collection, room_id)
 
 
@@ -347,3 +361,47 @@ def register_room_handlers(socketio, user_collection, room_collection):
         page = request.args.get('page')
         room_id = request.args.get('room_id')
         print(f"[CONNECT] {request.sid} connected from page: {page}, room: {room_id}")
+
+
+# server-side battlefield terrain generation (Python)
+import random
+
+def generate_battlefield_terrain(width=100, height=100):
+    terrain = [[0 for _ in range(width)] for _ in range(height)]
+
+    # Define safe zones
+    safe_zone_red = (0, 0, 5, 5)
+    safe_zone_blue = (width-5, height-5, width, height)
+
+    def in_safe_zone(x, y):
+        return (safe_zone_red[0] <= x < safe_zone_red[2] and safe_zone_red[1] <= y < safe_zone_red[3]) or \
+               (safe_zone_blue[0] <= x < safe_zone_blue[2] and safe_zone_blue[1] <= y < safe_zone_blue[3])
+
+    # ✨ Step 1: Create big wall blocks
+    for _ in range(40):  # More blocks (used to be 25)
+        block_width = random.randint(3, 6)
+        block_height = random.randint(3, 6)
+        start_x = random.randint(0, width - block_width - 1)
+        start_y = random.randint(0, height - block_height - 1)
+
+        for x in range(start_x, start_x + block_width):
+            for y in range(start_y, start_y + block_height):
+                if not in_safe_zone(x, y):
+                    terrain[y][x] = 1  # Wall
+
+    # ✨ Step 2: Sprinkle small single-tile obstacles
+    for _ in range(300):  # Add many scattered little tiles
+        x = random.randint(0, width-1)
+        y = random.randint(0, height-1)
+        if not in_safe_zone(x, y) and terrain[y][x] == 0:
+            terrain[y][x] = 1
+
+    # ✨ Step 3: Make spawn zones clean
+    for x in range(width):
+        for y in range(height):
+            if x >= width-5 and y < 5:
+                terrain[y][x] = 3  # Red team safe
+            elif x < 5 and y >= height-5:
+                terrain[y][x] = 2  # Blue team safe
+
+    return terrain
