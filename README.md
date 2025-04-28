@@ -18,7 +18,7 @@ Checkout the main branch to run and test the game.
 Other branches are outdated or experimental.
 
 🛠️ Deployment
-To deploy the production version, checkout the deploy-2.0 branch.
+To deploy the production version, checkout the deploy-3.0 branch.
 
 The deployed domain is:
 👉 https://jchen544.cse312.dev
