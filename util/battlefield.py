@@ -10,6 +10,16 @@ MAP_HEIGHT = 100
 
 terrain = [[0 for _ in range(MAP_WIDTH)] for _ in range(MAP_HEIGHT)]
 
+for y in range(MAP_HEIGHT):
+    for x in range(MAP_WIDTH):
+        if y < 5 and x >= MAP_WIDTH - 5:
+            inside = (x >= MAP_WIDTH - 4 and x <= MAP_WIDTH - 2) and (y >= 1 and y <= 3)
+            terrain[y][x] = 0 if inside else 3  # red base walls
+        elif y >= MAP_HEIGHT - 5 and x < 5:
+            terrain[y][x] = 2  # blue base walls
+        elif (x + y) % 17 == 0 and 5 < x < MAP_WIDTH - 6 and 5 < y < MAP_HEIGHT - 6:
+            terrain[y][x] = 1  # scattered maze walls
+
 # Global memory
 room_player_data = {}  # { room_id: { player_name: {"x": int, "y": int, "team": str} } }
 player_status = {}     # { room_id: { player_name: "alive" or "dead" } }
@@ -28,6 +38,29 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
         if room_id:
             print(f"[BATTLEFIELD JOIN] {player_id} joining room {room_id}")
             join_room(room_id)
+
+            # 🔥 Immediately emit the current player positions after joining
+            room = room_collection.find_one({"id": room_id})
+            if not room:
+                print(f"[❌] Room {room_id} not found when joining")
+                return
+
+            players = room.get('players', [])
+            updated_players = []
+
+            room_doc = room_collection.find_one({"id": room_id})
+
+            for p in players:
+                user_doc = user_collection.find_one({"username": p["id"]})
+                p["avatar"] = choose_avatar(p["id"], room_doc, user_doc)
+                updated_players.append(p)
+
+            emit('player_positions', updated_players, room=request.sid, namespace='/battlefield')
+            terrain_data = room.get('terrain')
+            if terrain_data:
+                emit('load_terrain', {'terrain': terrain_data}, room=request.sid, namespace='/battlefield')
+            else:
+                print("[❌] No terrain found for room", room_id)
 
     @socketio.on('move', namespace='/battlefield')
     def handle_move(data):
@@ -75,8 +108,19 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
         if not (0 <= new_x < MAP_WIDTH and 0 <= new_y < MAP_HEIGHT):
             print(f"[❌] Move out of bounds ({new_x}, {new_y})")
             return
-        if terrain[new_y][new_x] == 1:
-            print(f"[❌] Blocked by wall at ({new_x}, {new_y})")
+
+        room = room_collection.find_one({'id': room_id})
+        terrain = room.get('terrain', [[0] * 100 for _ in range(100)])  # fallback if missing
+        tile = terrain[new_y][new_x]
+        emit('terrain_data', terrain, room=room_id, namespace='/battlefield')
+        if tile == 1:
+            print(f"[❌] Blocked by maze wall at ({new_x}, {new_y})")
+            return
+        elif tile == 2 and player_data.get('team') != 'blue':
+            print(f"[❌] Only blue team can enter blue base at ({new_x}, {new_y})")
+            return
+        elif tile == 3 and player_data.get('team') != 'red':
+            print(f"[❌] Only red team can enter red base at ({new_x}, {new_y})")
             return
 
         # write move into MongoDB
@@ -133,7 +177,9 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
                         continue  # Neither is attacker, no tagging
 
                     print(f"[TAG] {tagger} (attacker) tagged {victim} (defender)")
-
+                    if player_status.get(room_id, {}).get(victim, {}).get('status') == 'dead':
+                        print(f"[❌] {victim} is already dead, skipping re-tag")
+                        continue
                     emit('player_tagged', {'tagger': tagger, 'target': victim}, room=room_id)
 
                     # mark victim dead
@@ -182,7 +228,7 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
             socketio.emit('player_positions', updated.get('players', []), room=room_id, namespace='/battlefield')
 
         print(f"[BATTLEFIELD DISCONNECT] {username} removed from battlefield players.")
-    
+
     #gives latest player info after respawn
     @socketio.on('request_positions', namespace='/battlefield')
     def handle_request_positions():

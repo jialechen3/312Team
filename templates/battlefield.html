@@ -163,17 +163,8 @@ const roomId = new URLSearchParams(location.search).get('room');
 if (!roomId) { alert('Room ID missing'); throw new Error('No room id'); }
 
 const TILE_SIZE = 40, MAP_WIDTH = 100, MAP_HEIGHT = 100;
-const terrain = Array.from({ length: MAP_HEIGHT }, (_, y) =>
-  Array.from({ length: MAP_WIDTH }, (_, x) => {
-    if (y < 5 && x >= MAP_WIDTH - 5) {
-      const inside = (x >= MAP_WIDTH - 4 && x <= MAP_WIDTH - 2) && (y >= 1 && y <= 3);
-      return inside ? 0 : 3;
-    }
-    if (y >= MAP_HEIGHT - 5 && x < 5) return 2;
-    if ((x + y) % 17 === 0 && x > 5 && x < MAP_WIDTH - 6 && y > 5 && y < MAP_HEIGHT - 6) return 1;
-    return 0;
-  })
-);
+let terrain = Array.from({ length: MAP_HEIGHT }, () => Array(MAP_WIDTH).fill(0));
+
 
 socket.on('player_positions', list => {
   players = {};
@@ -275,10 +266,48 @@ fetch('/api/whoami', { credentials: 'include' })
 
 document.addEventListener('keydown', e => {
   if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+  if (!playerId) return;  // no user yet
+
+  let dx = 0, dy = 0;
+  if (e.key === 'ArrowUp') dy = -1;
+  if (e.key === 'ArrowDown') dy = 1;
+  if (e.key === 'ArrowLeft') dx = -1;
+  if (e.key === 'ArrowRight') dx = 1;
+
+  const nextX = pos.x + dx;
+  const nextY = pos.y + dy;
+
+  // Check map bounds first
+  if (nextX < 0 || nextX >= MAP_WIDTH || nextY < 0 || nextY >= MAP_HEIGHT) {
+    return;  // Out of bounds, don't move
+  }
+
+  // 🔥 Block movement if next tile is a wall
+  if (terrain[nextY][nextX] === 1) {
+    console.log('Blocked by wall at', nextX, nextY);
+    return;
+  }
+
+  // ✅ If allowed, emit move
   socket.emit('move', {
-    roomId, player: playerId,
+    roomId,
+    player: playerId,
     direction: e.key.replace('Arrow', '').toLowerCase()
   });
+});
+
+
+socket.on('load_terrain', (data) => {
+  console.log('[Terrain loaded]', data);
+
+  if (Array.isArray(data.terrain)) {
+    for (let y = 0; y < MAP_HEIGHT; y++) {
+      for (let x = 0; x < MAP_WIDTH; x++) {
+        terrain[y][x] = data.terrain[y][x];
+      }
+    }
+    draw();  // 🔥 redraw the map after loading
+  }
 });
 
 function drawGrid(vx, vy) {

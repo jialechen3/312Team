@@ -96,7 +96,10 @@ def _end_round(sock: SocketIO, room_id: str, room_collection) -> None:
         sock.emit('match_over',
                   {"winner": winner, "red": red, "blue": blue},
                   room=room_id, namespace='/battlefield')
+        room_collection.delete_one({'id': room_id})
+        round_state.pop(room_id, None)
         return  # match finished ✅
+
 
     # flip taggers for next round
     s["taggers"] = "blue" if s["taggers"] == "red" else "red"
