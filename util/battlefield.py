@@ -22,7 +22,7 @@ for y in range(MAP_HEIGHT):
 
 # Global memory
 room_player_data = {}  # { room_id: { player_name: {"x": int, "y": int, "team": str} } }
-player_status = {}     # { room_id: { player_name: "alive" or "dead" } }
+player_status = {}     # { room_id: { player_name: "alive" or "dead", dx: -2.0 - 2.0, dy: -2.0 - 2.0} }
 
 def register_battlefield_handlers(socketio, user_collection, room_collection):
 
@@ -63,9 +63,9 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
     def handle_move(data):
         room_id = data.get('roomId')
         player = data.get('player')
-        direction = data.get('direction')
+        keyPress = data.get('direction')
 
-        if not room_id or not player or not direction:
+        if not room_id or not player or not keyPress:
             return
 
         room = room_collection.find_one({'id': room_id})
@@ -83,17 +83,16 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
             return
 
         # compute new position
-        x, y = player_data['x'], player_data['y']
-        if direction == 'up':
-            new_x, new_y = x, y - 1
-        elif direction == 'down':
-            new_x, new_y = x, y + 1
-        elif direction == 'left':
-            new_x, new_y = x - 1, y
-        elif direction == 'right':
-            new_x, new_y = x + 1, y
-        else:
-            return
+        new_x, new_y = player_data['x'], player_data['y']
+        if keyPress['ArrowUp']:
+            new_y -= 0.1
+        if keyPress['ArrowDown']:
+            new_y += 0.1
+        if keyPress['ArrowLeft']:
+            new_x -= 0.1
+        if keyPress['ArrowRight']:
+            new_x += 0.1
+
 
         # bounds & terrain check
         if not (0 <= new_x < MAP_WIDTH and 0 <= new_y < MAP_HEIGHT):
@@ -101,14 +100,15 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
 
         room = room_collection.find_one({'id': room_id})
         terrain = room.get('terrain', [[0] * 100 for _ in range(100)])  # fallback if missing
-        tile = terrain[new_y][new_x]
-        emit('terrain_data', terrain, room=room_id, namespace='/battlefield')
+
+        '''tile = terrain[new_y][new_x]
+        #emit('terrain_data', terrain, room=room_id, namespace='/battlefield') this was in the code but not doing anything since the terrain_data socket doesnt exist
         if tile == 1:
             return
         elif tile == 2 and player_data.get('team') != 'blue':
             return
         elif tile == 3 and player_data.get('team') != 'red':
-            return
+            return'''
 
         # write move into MongoDB
         result = room_collection.update_one(

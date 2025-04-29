@@ -139,7 +139,7 @@ let roundTimeLeft = 0;
 let roundTimerId = null;
 let bannerHideTimer = null;
 
-let playerId = null, players = {}, deadPlayers = {}, respawnTimers = {}, pos = { x: 0, y: 0 };
+let playerId = null, players = {}, deadPlayers = {}, respawnTimers = {}, pos = { x: 0.0, y: 0.0 };
 
 function flashNumber(txt) {
   roundBanner.textContent = txt;
@@ -283,36 +283,76 @@ fetch('/api/whoami', { credentials: 'include' })
     setInterval(draw, 1000 / 60);
   });
 
+const keyState = {
+  ArrowUp: false,
+  ArrowDown: false,
+  ArrowLeft: false,
+  ArrowRight: false
+};
+
 document.addEventListener('keydown', e => {
-  if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
-  if (!playerId) return;  // no user yet
+  // If the key is one of the four arrows, mark it as pressed
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+    keyState[e.key] = true;  // Mark the key as pressed
+    console.log('down')
+    console.log(e.key)
+  }
+});
 
-  let dx = 0, dy = 0;
-  if (e.key === 'ArrowUp') dy = -1;
-  if (e.key === 'ArrowDown') dy = 1;
-  if (e.key === 'ArrowLeft') dx = -1;
-  if (e.key === 'ArrowRight') dx = 1;
+document.addEventListener('keyup', e => {
+  // When the key is released, mark it as not pressed
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+    keyState[e.key] = false;  // Mark the key as not pressed
+    console.log('up')
+    console.log(e.key)
+  }
+});
 
+function gameLoop() {
+  if (Object.values(keyState).includes(true)) {
+    movePlayer();  // Call movePlayer if any key is pressed
+  }
+
+  requestAnimationFrame(gameLoop);  // Call gameLoop again for the next frame
+}
+
+// Start the game loop
+gameLoop();
+
+function movePlayer() {
+  dx = 0.0;
+  dy = 0.0;
+  if (keyState['ArrowUp']){ dy -=0.1; console.log(dy);}
+  if (keyState['ArrowDown']){ dy +=0.1;console.log(dy);}
+  if (keyState['ArrowLeft']){ dx -=0.1; console.log(dx);}
+  if (keyState['ArrowRight']){ dx +=0.1; console.log(dx);}
   const nextX = pos.x + dx;
   const nextY = pos.y + dy;
+
 
   // Check map bounds first
   if (nextX < 0 || nextX >= MAP_WIDTH || nextY < 0 || nextY >= MAP_HEIGHT) {
     return;  // Out of bounds, don't move
   }
 
-  // 🔥 Block movement if next tile is a wall
-  if (terrain[nextY][nextX] === 1) {
-    return;
-  }
+  // 🔥 Block movement if next tile is a wall MUST UPDATE WITH NEW MOVMENT
+  //if (terrain[nextY][nextX] === 1) {
+  //  return;
+  //}
 
+  console.log(keyState)
   // ✅ If allowed, emit move
   socket.emit('move', {
     roomId,
     player: playerId,
-    direction: e.key.replace('Arrow', '').toLowerCase()
+    direction: keyState
   });
-});
+}
+
+
+
+
+
 
 
 socket.on('load_terrain', (data) => {
@@ -332,7 +372,7 @@ socket.on('load_terrain', (data) => {
 function drawGrid(vx, vy) {
   const cols = Math.ceil(canvas.width / TILE_SIZE);
   const rows = Math.ceil(canvas.height / TILE_SIZE);
-  for (let x = 0; x < cols; x++) for (let y = 0; y < rows; y++) {
+  for (let x = 0.0; x < cols; x++) for (let y = 0.0; y < rows; y++) {
     const wx = Math.floor(vx + x), wy = Math.floor(vy + y);
     if (wx >= MAP_WIDTH || wy >= MAP_HEIGHT) continue;
     ctx.fillStyle =
@@ -346,7 +386,7 @@ function drawGrid(vx, vy) {
 }
 
 function drawPlayers(vx, vy) {
-  const size = 40;
+  const size = 40.0;
   for (const id in players) {
     const p = players[id];
     const sx = (p.x - vx) * TILE_SIZE;
@@ -408,7 +448,7 @@ function drawMinimap(players) {
   miniCtx.clearRect(0, 0, minimap.width, minimap.height);
 
   // 🖼️ First, draw cached terrain
-  miniCtx.drawImage(minimapTerrain, 0, 0);
+  miniCtx.drawImage(minimapTerrain, 0.0, 0.0);
 
   // 🧍 Then draw players
   Object.values(players).forEach(player => {
