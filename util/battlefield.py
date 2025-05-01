@@ -2,6 +2,7 @@ from flask import Blueprint, render_template, request
 from flask_socketio import emit, join_room
 from util.auth import hash_token
 import time
+import math
 from util.rooms import choose_avatar
 
 # Constants for map size
@@ -95,15 +96,54 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
 
 
         # bounds & terrain check
-        if not (0 <= new_x < MAP_WIDTH and 0 <= new_y < MAP_HEIGHT):
+        if not (0 <= new_x < MAP_WIDTH-1 and 0 <= new_y < MAP_HEIGHT-1):
             return
 
         room = room_collection.find_one({'id': room_id})
         terrain = room.get('terrain', [[0] * 100 for _ in range(100)])  # fallback if missing
 
-        '''tile = terrain[new_y][new_x]
+        c_new_x = math.ceil(new_x)
+        f_new_x = math.floor(new_x)
+        c_new_y = math.ceil(new_y)
+        f_new_y = math.floor(new_y)
+        tileTL = terrain[f_new_y][f_new_x] #tile Top Left
+        tileTR = terrain[f_new_y][c_new_x] #tile Top Right
+        tileBL = terrain[c_new_y][f_new_x] #tile Bottom Left
+        tileBR = terrain[c_new_y][c_new_x] #tile Bottom Right
+
         #emit('terrain_data', terrain, room=room_id, namespace='/battlefield') this was in the code but not doing anything since the terrain_data socket doesnt exist
-        if tile == 1:
+        if new_x != player_data['x']:
+            if new_x < player_data['x']:  # Moving left
+                if tileTL == 1 or tileBL == 1:  # Wall collision to the left
+                    new_x = player_data['x']  # Stop horizontal movement
+            elif new_x > player_data['x']:  # Moving right
+                if tileTR == 1 or tileBR == 1:  # Wall collision to the right
+                    new_x = player_data['x']  # Stop horizontal movement
+
+        if new_y != player_data['y']:
+            if new_y > player_data['y']:  # Moving down
+                if tileBL == 1 or tileBR == 1:  # Wall collision to the bottom
+                    new_y = player_data['y']  # Stop vertical movement
+            elif new_y < player_data['y']:  # Moving up
+                if tileTL == 1 or tileTR == 1:  # Wall collision to the top
+                    new_y = player_data['y']  # Stop vertical movement
+
+
+        '''if player_data.get('team') != 'blue':
+            if (new_y > player_data['y'] and (tileBL or tileBR == 2)) or (new_y < player_data['y'] and (tileTL or tileTR == 2)):
+                new_y = player_data['y']
+            if (new_x < player_data['x'] and (tileTL or tileBL == 2)) or (new_x < player_data['x'] and (tileTR or tileBR == 2)):
+                new_x = player_data['x']
+        elif player_data.get('team') != 'red':
+            if (new_y > player_data['y'] and (tileBL or tileBR == 3)) or (new_y < player_data['y'] and (tileTL or tileTR == 3)):
+                new_y = player_data['y']
+            if (new_x < player_data['x'] and (tileTL or tileBL == 3)) or (new_x < player_data['x'] and (tileTR or tileBR == 3)):
+                new_x = player_data['x']
+        else:
+            print(f"Player is not on either blue or red team")
+            return'''
+
+        '''if tile == 1:
             return
         elif tile == 2 and player_data.get('team') != 'blue':
             return

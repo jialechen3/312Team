@@ -101,8 +101,8 @@
 <canvas id="game" width="1200" height="750"></canvas>
 <canvas
   id="minimap"
-  width="200"
-  height="200"
+  width="200.0"
+  height="200.0"
   style="
     position: absolute;
     bottom: 20px;
@@ -180,7 +180,7 @@ function paintCorner() {
 const roomId = new URLSearchParams(location.search).get('room');
 if (!roomId) { alert('Room ID missing'); throw new Error('No room id'); }
 
-const TILE_SIZE = 40, MAP_WIDTH = 100, MAP_HEIGHT = 100;
+const TILE_SIZE = 40.0, MAP_WIDTH = 100.0, MAP_HEIGHT = 100.0;
 let terrain = Array.from({ length: MAP_HEIGHT }, () => Array(MAP_WIDTH).fill(0));
 
 
@@ -202,7 +202,6 @@ socket.on('player_positions', list => {
 
   if (players[playerId]) {
     pos = { x: players[playerId].x, y: players[playerId].y };
-
     // 🆕 Update teamSmall
     const myTeam = players[playerId].team;
     teamSmall.textContent = `Team: ${myTeam ? myTeam.toUpperCase() : '--'}`;
@@ -294,8 +293,6 @@ document.addEventListener('keydown', e => {
   // If the key is one of the four arrows, mark it as pressed
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
     keyState[e.key] = true;  // Mark the key as pressed
-    console.log('down')
-    console.log(e.key)
   }
 });
 
@@ -303,8 +300,6 @@ document.addEventListener('keyup', e => {
   // When the key is released, mark it as not pressed
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
     keyState[e.key] = false;  // Mark the key as not pressed
-    console.log('up')
-    console.log(e.key)
   }
 });
 
@@ -322,25 +317,61 @@ gameLoop();
 function movePlayer() {
   dx = 0.0;
   dy = 0.0;
-  if (keyState['ArrowUp']){ dy -=0.1; console.log(dy);}
-  if (keyState['ArrowDown']){ dy +=0.1;console.log(dy);}
-  if (keyState['ArrowLeft']){ dx -=0.1; console.log(dx);}
-  if (keyState['ArrowRight']){ dx +=0.1; console.log(dx);}
-  const nextX = pos.x + dx;
-  const nextY = pos.y + dy;
+  if (keyState['ArrowUp']) dy -=0.1;
+  if (keyState['ArrowDown']) dy +=0.1;
+  if (keyState['ArrowLeft']) dx -=0.1;
+  if (keyState['ArrowRight']) dx +=0.1;
+  let nextX = pos.x + dx;
+  let nextY = pos.y + dy;
 
 
   // Check map bounds first
-  if (nextX < 0 || nextX >= MAP_WIDTH || nextY < 0 || nextY >= MAP_HEIGHT) {
+  if (nextX < 0 || nextX >= MAP_WIDTH-1 || nextY < 0 || nextY >= MAP_HEIGHT-1) {
     return;  // Out of bounds, don't move
   }
 
+  const c_new_x = Math.ceil(nextX);  // Ceiling of x for Top Right & Bottom Right
+  const f_new_x = Math.floor(nextX); // Floor of x for Top Left & Bottom Left
+  const c_new_y = Math.ceil(nextY);  // Ceiling of y for Bottom Right & Top Right
+  const f_new_y = Math.floor(nextY); // Floor of y for Top Left & Bottom Left
   // 🔥 Block movement if next tile is a wall MUST UPDATE WITH NEW MOVMENT
   //if (terrain[nextY][nextX] === 1) {
   //  return;
   //}
 
-  console.log(keyState)
+  const tileTL = terrain[f_new_y][f_new_x]; // Tile Top Left
+  const tileTR = terrain[f_new_y][c_new_x]; // Tile Top Right
+  const tileBL = terrain[c_new_y][f_new_x]; // Tile Bottom Left
+  const tileBR = terrain[c_new_y][c_new_x]; // Tile Bottom Right
+
+  if (nextX !== pos.x) {
+    if (nextX < pos.x) {  // Moving left
+        if (tileTL === 1 || tileBL === 1) {  // Wall collision to the left
+            nextX = pos.x;  // Stop horizontal movement
+        }
+    } else if (nextX > pos.x) {  // Moving right
+        if (tileTR === 1 || tileBR === 1) {  // Wall collision to the right
+            nextX = pos.x;  // Stop horizontal movement
+        }
+    }
+  }
+
+  if (nextY !== pos.y) {
+    if (nextY > pos.y) {  // Moving down
+        if (tileBL === 1 || tileBR === 1) {  // Wall collision to the bottom
+            nextY = pos.y;  // Stop vertical movement
+        }
+    } else if (nextY < pos.y) {  // Moving up
+        if (tileTL === 1 || tileTR === 1) {  // Wall collision to the top
+            nextY = pos.y;  // Stop vertical movement
+        }
+    }
+  }
+
+  if(pos.x == nextX && pos.y == nextY) {
+      return;
+  }
+
   // ✅ If allowed, emit move
   socket.emit('move', {
     roomId,
@@ -348,12 +379,6 @@ function movePlayer() {
     direction: keyState
   });
 }
-
-
-
-
-
-
 
 socket.on('load_terrain', (data) => {
 
@@ -370,18 +395,24 @@ socket.on('load_terrain', (data) => {
 });
 
 function drawGrid(vx, vy) {
+  //console.log(`Running drawGrid at point vx: ${vx}, vy: ${vy}`);
   const cols = Math.ceil(canvas.width / TILE_SIZE);
   const rows = Math.ceil(canvas.height / TILE_SIZE);
-  for (let x = 0.0; x < cols; x++) for (let y = 0.0; y < rows; y++) {
-    const wx = Math.floor(vx + x), wy = Math.floor(vy + y);
+  const rounded_vx = Math.floor(vx);
+  const rounded_vy = Math.floor(vy);
+  x_offset = vx - Math.floor(vx);
+  y_offset = vy - Math.floor(vy);
+  for (let x = 0; x < cols; x++) for (let y = 0; y < rows; y++) {
+    const wx = Math.floor(rounded_vx + x), wy = Math.floor(rounded_vy + y);
     if (wx >= MAP_WIDTH || wy >= MAP_HEIGHT) continue;
     ctx.fillStyle =
       terrain[wy][wx] === 1 ? 'gray' :
       terrain[wy][wx] === 2 ? 'blue' :
       terrain[wy][wx] === 3 ? 'red' : '#1e1e2f';
-    ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+    //console.log(`fillRect coordinates: x: ${(x * TILE_SIZE) + x_offset}, y: ${(y * TILE_SIZE) + y_offset}`);
+    ctx.fillRect((x * TILE_SIZE) - (x_offset * TILE_SIZE), (y * TILE_SIZE) - (y_offset * TILE_SIZE), TILE_SIZE, TILE_SIZE);
     ctx.strokeStyle = '#222';
-    ctx.strokeRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+    ctx.strokeRect((x * TILE_SIZE) - (x_offset * TILE_SIZE), (y * TILE_SIZE) - (y_offset * TILE_SIZE), TILE_SIZE, TILE_SIZE);
   }
 }
 
@@ -389,7 +420,9 @@ function drawPlayers(vx, vy) {
   const size = 40.0;
   for (const id in players) {
     const p = players[id];
+    //console.log(`sx: ${(p.x - vx) * TILE_SIZE}`);
     const sx = (p.x - vx) * TILE_SIZE;
+    //console.log(`sy: ${(p.y - vy) * TILE_SIZE}`);
     const sy = (p.y - vy) * TILE_SIZE;
     const src = p.avatar;
     const img = avatarCache[src];
@@ -433,8 +466,8 @@ function drawPlayers(vx, vy) {
 
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  const vx = Math.max(0, Math.min(pos.x - canvas.width / (TILE_SIZE * 2), MAP_WIDTH - canvas.width / TILE_SIZE));
-  const vy = Math.max(0, Math.min(pos.y - canvas.height / (TILE_SIZE * 2), MAP_HEIGHT - canvas.height / TILE_SIZE));
+  const vx = Math.max(0, Math.min(pos.x - canvas.width / (TILE_SIZE * 2.0), MAP_WIDTH - canvas.width / TILE_SIZE));
+  const vy = Math.max(0, Math.min(pos.y - canvas.height / (TILE_SIZE * 2.0), MAP_HEIGHT - canvas.height / TILE_SIZE));
   drawGrid(vx, vy);
   drawPlayers(vx, vy);
 }
