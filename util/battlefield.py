@@ -86,13 +86,13 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
         # compute new position
         new_x, new_y = player_data['x'], player_data['y']
         if keyPress['ArrowUp']:
-            new_y -= 0.1
+            new_y = round((new_y - 0.1)*100)/100
         if keyPress['ArrowDown']:
-            new_y += 0.1
+            new_y = round((new_y + 0.1)*100)/100
         if keyPress['ArrowLeft']:
-            new_x -= 0.1
+            new_x = round((new_x - 0.1)*100)/100
         if keyPress['ArrowRight']:
-            new_x += 0.1
+            new_x = round((new_x + 0.1)*100)/100
 
 
         # bounds & terrain check
@@ -102,17 +102,25 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
         room = room_collection.find_one({'id': room_id})
         terrain = room.get('terrain', [[0] * 100 for _ in range(100)])  # fallback if missing
 
-        c_new_x = math.ceil(new_x)
         f_new_x = math.floor(new_x)
-        c_new_y = math.ceil(new_y)
+        if new_x%1 != 0:
+            c_new_x = math.ceil(new_x)
+        else:
+            c_new_x = f_new_x
+
         f_new_y = math.floor(new_y)
+        if new_y%1 != 0:
+            c_new_y = math.ceil(new_y)
+        else:
+            c_new_y = f_new_y
+
         tileTL = terrain[f_new_y][f_new_x] #tile Top Left
         tileTR = terrain[f_new_y][c_new_x] #tile Top Right
         tileBL = terrain[c_new_y][f_new_x] #tile Bottom Left
         tileBR = terrain[c_new_y][c_new_x] #tile Bottom Right
 
         #emit('terrain_data', terrain, room=room_id, namespace='/battlefield') this was in the code but not doing anything since the terrain_data socket doesnt exist
-        if new_x != player_data['x']:
+        if new_x != player_data['x'] and not f_new_x == c_new_x:
             if new_x < player_data['x']:  # Moving left
                 if tileTL == 1 or tileBL == 1:  # Wall collision to the left
                     new_x = player_data['x']  # Stop horizontal movement
@@ -120,7 +128,7 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
                 if tileTR == 1 or tileBR == 1:  # Wall collision to the right
                     new_x = player_data['x']  # Stop horizontal movement
 
-        if new_y != player_data['y']:
+        if new_y != player_data['y'] and not f_new_y == c_new_y:
             if new_y > player_data['y']:  # Moving down
                 if tileBL == 1 or tileBR == 1:  # Wall collision to the bottom
                     new_y = player_data['y']  # Stop vertical movement

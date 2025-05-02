@@ -321,8 +321,8 @@ function movePlayer() {
   if (keyState['ArrowDown']) dy +=0.1;
   if (keyState['ArrowLeft']) dx -=0.1;
   if (keyState['ArrowRight']) dx +=0.1;
-  let nextX = pos.x + dx;
-  let nextY = pos.y + dy;
+  let nextX = Math.round((pos.x + dx)*100)/100;
+  let nextY =  Math.round((pos.y + dy)*100)/100;
 
 
   // Check map bounds first
@@ -330,10 +330,30 @@ function movePlayer() {
     return;  // Out of bounds, don't move
   }
 
-  const c_new_x = Math.ceil(nextX);  // Ceiling of x for Top Right & Bottom Right
-  const f_new_x = Math.floor(nextX); // Floor of x for Top Left & Bottom Left
-  const c_new_y = Math.ceil(nextY);  // Ceiling of y for Bottom Right & Top Right
-  const f_new_y = Math.floor(nextY); // Floor of y for Top Left & Bottom Left
+  let c_new_x; // Declare outside the if block
+  let c_new_y;
+
+  const f_new_x = Math.floor(nextX);
+  if (nextX % 1 !== 0) {
+    c_new_x = Math.ceil(nextX); // Assign directly to the declared variable
+  } else {
+    c_new_x = f_new_x; // If nextX is already an integer, assign the floored value
+  }
+
+  const f_new_y = Math.floor(nextY);
+  if (nextY % 1 !== 0) {
+    c_new_y = Math.ceil(nextY); // Assign directly to the declared variable
+  } else {
+    c_new_y = f_new_y; // If nextY is already an integer, assign the floored value
+  }
+
+
+
+
+  //const c_new_x = Math.ceil(nextX);  // Ceiling of x for Top Right & Bottom Right
+  //const f_new_x = Math.floor(nextX); // Floor of x for Top Left & Bottom Left
+  //const c_new_y = Math.ceil(nextY);  // Ceiling of y for Bottom Right & Top Right
+  //const f_new_y = Math.floor(nextY); // Floor of y for Top Left & Bottom Left
   // 🔥 Block movement if next tile is a wall MUST UPDATE WITH NEW MOVMENT
   //if (terrain[nextY][nextX] === 1) {
   //  return;
@@ -344,7 +364,7 @@ function movePlayer() {
   const tileBL = terrain[c_new_y][f_new_x]; // Tile Bottom Left
   const tileBR = terrain[c_new_y][c_new_x]; // Tile Bottom Right
 
-  if (nextX !== pos.x) {
+  if ((nextX !== pos.x) && (f_new_x !== c_new_x)) {
     if (nextX < pos.x) {  // Moving left
         if (tileTL === 1 || tileBL === 1) {  // Wall collision to the left
             nextX = pos.x;  // Stop horizontal movement
@@ -356,7 +376,7 @@ function movePlayer() {
     }
   }
 
-  if (nextY !== pos.y) {
+  if ((nextY !== pos.y) && (f_new_y !== c_new_y)) {
     if (nextY > pos.y) {  // Moving down
         if (tileBL === 1 || tileBR === 1) {  // Wall collision to the bottom
             nextY = pos.y;  // Stop vertical movement
@@ -395,7 +415,6 @@ socket.on('load_terrain', (data) => {
 });
 
 function drawGrid(vx, vy) {
-  //console.log(`Running drawGrid at point vx: ${vx}, vy: ${vy}`);
   const cols = Math.ceil(canvas.width / TILE_SIZE);
   const rows = Math.ceil(canvas.height / TILE_SIZE);
   const rounded_vx = Math.floor(vx);
@@ -409,7 +428,6 @@ function drawGrid(vx, vy) {
       terrain[wy][wx] === 1 ? 'gray' :
       terrain[wy][wx] === 2 ? 'blue' :
       terrain[wy][wx] === 3 ? 'red' : '#1e1e2f';
-    //console.log(`fillRect coordinates: x: ${(x * TILE_SIZE) + x_offset}, y: ${(y * TILE_SIZE) + y_offset}`);
     ctx.fillRect((x * TILE_SIZE) - (x_offset * TILE_SIZE), (y * TILE_SIZE) - (y_offset * TILE_SIZE), TILE_SIZE, TILE_SIZE);
     ctx.strokeStyle = '#222';
     ctx.strokeRect((x * TILE_SIZE) - (x_offset * TILE_SIZE), (y * TILE_SIZE) - (y_offset * TILE_SIZE), TILE_SIZE, TILE_SIZE);
@@ -420,9 +438,7 @@ function drawPlayers(vx, vy) {
   const size = 40.0;
   for (const id in players) {
     const p = players[id];
-    //console.log(`sx: ${(p.x - vx) * TILE_SIZE}`);
     const sx = (p.x - vx) * TILE_SIZE;
-    //console.log(`sy: ${(p.y - vy) * TILE_SIZE}`);
     const sy = (p.y - vy) * TILE_SIZE;
     const src = p.avatar;
     const img = avatarCache[src];
