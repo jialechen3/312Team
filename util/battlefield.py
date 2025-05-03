@@ -2,6 +2,7 @@ from flask import Blueprint, render_template, request
 from flask_socketio import emit, join_room
 from util.auth import hash_token
 import time
+import math
 from util.rooms import choose_avatar
 
 # Constants for map size
@@ -22,7 +23,7 @@ for y in range(MAP_HEIGHT):
 
 # Global memory
 room_player_data = {}  # { room_id: { player_name: {"x": int, "y": int, "team": str} } }
-player_status = {}     # { room_id: { player_name: "alive" or "dead" } }
+player_status = {}     # { room_id: { player_name: "alive" or "dead", dx: -2.0 - 2.0, dy: -2.0 - 2.0} }
 
 def register_battlefield_handlers(socketio, user_collection, room_collection):
 
@@ -63,9 +64,9 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
     def handle_move(data):
         room_id = data.get('roomId')
         player = data.get('player')
-        direction = data.get('direction')
+        keyPress = data.get('direction')
 
-        if not room_id or not player or not direction:
+        if not room_id or not player or not keyPress:
             return
 
         room = room_collection.find_one({'id': room_id})
@@ -83,32 +84,118 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
             return
 
         # compute new position
-        x, y = player_data['x'], player_data['y']
-        if direction == 'up':
-            new_x, new_y = x, y - 1
-        elif direction == 'down':
-            new_x, new_y = x, y + 1
-        elif direction == 'left':
-            new_x, new_y = x - 1, y
-        elif direction == 'right':
-            new_x, new_y = x + 1, y
-        else:
-            return
+        new_x, new_y = player_data['x'], player_data['y']
+        if keyPress['ArrowUp']:
+            new_y = round((new_y - 0.1)*100)/100
+        if keyPress['ArrowDown']:
+            new_y = round((new_y + 0.1)*100)/100
+        if keyPress['ArrowLeft']:
+            new_x = round((new_x - 0.1)*100)/100
+        if keyPress['ArrowRight']:
+            new_x = round((new_x + 0.1)*100)/100
 
-        # bounds & terrain check
-        if not (0 <= new_x < MAP_WIDTH and 0 <= new_y < MAP_HEIGHT):
+        x_check, y_check = False, False
+        if not 0 <= new_x <= MAP_WIDTH-1:
+            new_x = clamp(new_x,0,MAP_WIDTH-1)
+            x_check = True
+        if not 0 <= new_y <= MAP_HEIGHT - 1:
+            new_y = clamp(new_y, 0, MAP_HEIGHT - 1)
+            y_check = True
+        if x_check and y_check:
             return
 
         room = room_collection.find_one({'id': room_id})
         terrain = room.get('terrain', [[0] * 100 for _ in range(100)])  # fallback if missing
-        tile = terrain[new_y][new_x]
-        emit('terrain_data', terrain, room=room_id, namespace='/battlefield')
-        if tile == 1:
+
+        f_new_x = math.floor(new_x)
+        if new_x%1 != 0:
+            c_new_x = math.ceil(new_x)
+        else:
+            c_new_x = f_new_x
+
+        f_new_y = math.floor(new_y)
+        if new_y%1 != 0:
+            c_new_y = math.ceil(new_y)
+        else:
+            c_new_y = f_new_y
+
+        tileTL = terrain[f_new_y][f_new_x] #tile Top Left
+        tileTR = terrain[f_new_y][c_new_x] #tile Top Right
+        tileBL = terrain[c_new_y][f_new_x] #tile Bottom Left
+        tileBR = terrain[c_new_y][c_new_x] #tile Bottom Right
+
+        #emit('terrain_data', terrain, room=room_id, namespace='/battlefield') this was in the code but not doing anything since the terrain_data socket doesnt exist
+        old_x = new_x
+        enemy_team_num = 3 if player_data.get('team') == 'blue' else 2
+        if new_x != player_data['x'] and not f_new_x == c_new_x:
+            if new_x < player_data['x']:  # Moving left
+                if (tileTL == 1 or tileBL == 1) or (tileTL == enemy_team_num or tileBL == enemy_team_num):  # Wall collision to the left
+                    new_x = player_data['x']  # Stop horizontal movement
+                    f_new_x = math.floor(new_x)
+                    #c_new_x = math.ceil(new_x)
+                    tileTL = terrain[f_new_y][f_new_x]
+                    tileBL = terrain[c_new_y][f_new_x]
+            elif new_x > player_data['x']:  # Moving right
+                if (tileTR == 1 or tileBR == 1) or (tileTR == enemy_team_num or tileBR == enemy_team_num):  # Wall collision to the right
+                    new_x = player_data['x']  # Stop horizontal movement
+                    #f_new_x = math.floor(new_x)
+                    c_new_x = math.ceil(new_x)
+                    tileTR = terrain[f_new_y][c_new_x]
+                    tileBR = terrain[c_new_y][c_new_x]
+        if new_y != player_data['y'] and not f_new_y == c_new_y:
+            if new_y > player_data['y']:  # Moving down
+                if (tileBL == 1 or tileBR == 1) or (tileBL == enemy_team_num or tileBR == enemy_team_num):  # Wall collision to the bottom
+                    new_y = player_data['y']  # Stop vertical movement
+                    #f_new_y = math.floor(new_y)
+                    c_new_y = math.ceil(new_y)
+                    f_new_x = math.floor(old_x)
+                    c_new_x = math.ceil(old_x)
+                    tileBL = terrain[c_new_y][f_new_x]
+                    tileBR = terrain[c_new_y][c_new_x]
+                    if old_x < player_data['x']:  # Moving left
+                        if tileTL == 0 and tileBL == 0:  # Wall collision to the left
+                            new_x = old_x  # Resume horizontal movement
+                    elif old_x > player_data['x']:  # Moving right
+                        if tileTR == 0 and tileBR == 0:  # Wall collision to the right
+                            new_x = old_x  # Resume horizontal movement
+            elif new_y < player_data['y']:  # Moving up
+                if (tileTL == 1 or tileTR == 1) or (tileTL == enemy_team_num or tileTR == enemy_team_num):  # Wall collision to the top
+                    new_y = player_data['y']  # Stop vertical movement
+                    f_new_y = math.floor(new_y)
+                    #c_new_y = math.ceil(new_y)
+                    f_new_x = math.floor(old_x)
+                    c_new_x = math.ceil(old_x)
+                    tileTL = terrain[f_new_y][f_new_x]
+                    tileTR = terrain[f_new_y][c_new_x]
+                    if old_x < player_data['x']:  # Moving left
+                        if tileTL == 0 and tileBL == 0:  # Wall collision to the left
+                            new_x = old_x  # Resume horizontal movement
+                    elif old_x > player_data['x']:  # Moving right
+                        if tileTR == 0 and tileBR == 0:  # Wall collision to the right
+                            new_x = old_x  # Resume horizontal movement
+
+
+
+        '''if player_data.get('team') != 'blue':
+            if (new_y > player_data['y'] and (tileBL or tileBR == 2)) or (new_y < player_data['y'] and (tileTL or tileTR == 2)):
+                new_y = player_data['y']
+            if (new_x < player_data['x'] and (tileTL or tileBL == 2)) or (new_x < player_data['x'] and (tileTR or tileBR == 2)):
+                new_x = player_data['x']
+        elif player_data.get('team') != 'red':
+            if (new_y > player_data['y'] and (tileBL or tileBR == 3)) or (new_y < player_data['y'] and (tileTL or tileTR == 3)):
+                new_y = player_data['y']
+            if (new_x < player_data['x'] and (tileTL or tileBL == 3)) or (new_x < player_data['x'] and (tileTR or tileBR == 3)):
+                new_x = player_data['x']
+        else:
+            print(f"Player is not on either blue or red team")
+            return'''
+
+        '''if tile == 1:
             return
         elif tile == 2 and player_data.get('team') != 'blue':
             return
         elif tile == 3 and player_data.get('team') != 'red':
-            return
+            return'''
 
         # write move into MongoDB
         result = room_collection.update_one(
@@ -273,3 +360,6 @@ def battlefield():
     if not room_id:
         return "Missing room ID", 400
     return render_template('battlefield.html', room_id=room_id)
+
+def clamp(value, min_value, max_value):
+    return max(min_value, min(value, max_value))
