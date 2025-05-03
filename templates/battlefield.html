@@ -326,7 +326,7 @@ function movePlayer() {
 
 
   // Check map bounds first
-  if (nextX < 0 || nextX >= MAP_WIDTH-1 || nextY < 0 || nextY >= MAP_HEIGHT-1) {
+  if (nextX < 0 || nextX > MAP_WIDTH-1 || nextY < 0 || nextY > MAP_HEIGHT-1) {
     return;  // Out of bounds, don't move
   }
 

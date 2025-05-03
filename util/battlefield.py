@@ -96,7 +96,7 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
 
 
         # bounds & terrain check
-        if not (0 <= new_x < MAP_WIDTH-1 and 0 <= new_y < MAP_HEIGHT-1):
+        if not (0 <= new_x <= MAP_WIDTH-1 and 0 <= new_y <= MAP_HEIGHT-1):
             return
 
         room = room_collection.find_one({'id': room_id})
@@ -127,15 +127,15 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
                 if (tileTL == 1 or tileBL == 1) or (tileTL == enemy_team_num or tileBL == enemy_team_num):  # Wall collision to the left
                     new_x = player_data['x']  # Stop horizontal movement
             elif new_x > player_data['x']:  # Moving right
-                if (tileTR == 1 or tileBR == 1) or (tileTL == enemy_team_num or tileBL == enemy_team_num):  # Wall collision to the right
+                if (tileTR == 1 or tileBR == 1) or (tileTR == enemy_team_num or tileBR == enemy_team_num):  # Wall collision to the right
                     new_x = player_data['x']  # Stop horizontal movement
 
         if new_y != player_data['y'] and not f_new_y == c_new_y:
             if new_y > player_data['y']:  # Moving down
-                if (tileBL == 1 or tileBR == 1) or (tileTL == enemy_team_num or tileBL == enemy_team_num):  # Wall collision to the bottom
+                if (tileBL == 1 or tileBR == 1) or (tileBL == enemy_team_num or tileBR == enemy_team_num):  # Wall collision to the bottom
                     new_y = player_data['y']  # Stop vertical movement
             elif new_y < player_data['y']:  # Moving up
-                if (tileTL == 1 or tileTR == 1) or (tileTL == enemy_team_num or tileBL == enemy_team_num):  # Wall collision to the top
+                if (tileTL == 1 or tileTR == 1) or (tileTL == enemy_team_num or tileTR == enemy_team_num):  # Wall collision to the top
                     new_y = player_data['y']  # Stop vertical movement
 
 
