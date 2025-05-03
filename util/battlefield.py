@@ -94,9 +94,14 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
         if keyPress['ArrowRight']:
             new_x = round((new_x + 0.1)*100)/100
 
-
-        # bounds & terrain check
-        if not (0 <= new_x <= MAP_WIDTH-1 and 0 <= new_y <= MAP_HEIGHT-1):
+        x_check, y_check = False, False
+        if not 0 <= new_x <= MAP_WIDTH-1:
+            new_x = clamp(new_x,0,MAP_WIDTH-1)
+            x_check = True
+        if not 0 <= new_y <= MAP_HEIGHT - 1:
+            new_y = clamp(new_y, 0, MAP_HEIGHT - 1)
+            y_check = True
+        if x_check and y_check:
             return
 
         room = room_collection.find_one({'id': room_id})
@@ -355,3 +360,6 @@ def battlefield():
     if not room_id:
         return "Missing room ID", 400
     return render_template('battlefield.html', room_id=room_id)
+
+def clamp(value, min_value, max_value):
+    return max(min_value, min(value, max_value))
