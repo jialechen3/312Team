@@ -120,24 +120,54 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
         tileBR = terrain[c_new_y][c_new_x] #tile Bottom Right
 
         #emit('terrain_data', terrain, room=room_id, namespace='/battlefield') this was in the code but not doing anything since the terrain_data socket doesnt exist
-
+        old_x = new_x
         enemy_team_num = 3 if player_data.get('team') == 'blue' else 2
         if new_x != player_data['x'] and not f_new_x == c_new_x:
             if new_x < player_data['x']:  # Moving left
                 if (tileTL == 1 or tileBL == 1) or (tileTL == enemy_team_num or tileBL == enemy_team_num):  # Wall collision to the left
                     new_x = player_data['x']  # Stop horizontal movement
+                    f_new_x = math.floor(new_x)
+                    #c_new_x = math.ceil(new_x)
+                    tileTL = terrain[f_new_y][f_new_x]
+                    tileBL = terrain[c_new_y][f_new_x]
             elif new_x > player_data['x']:  # Moving right
                 if (tileTR == 1 or tileBR == 1) or (tileTR == enemy_team_num or tileBR == enemy_team_num):  # Wall collision to the right
                     new_x = player_data['x']  # Stop horizontal movement
-
+                    #f_new_x = math.floor(new_x)
+                    c_new_x = math.ceil(new_x)
+                    tileTR = terrain[f_new_y][c_new_x]
+                    tileBR = terrain[c_new_y][c_new_x]
         if new_y != player_data['y'] and not f_new_y == c_new_y:
             if new_y > player_data['y']:  # Moving down
                 if (tileBL == 1 or tileBR == 1) or (tileBL == enemy_team_num or tileBR == enemy_team_num):  # Wall collision to the bottom
                     new_y = player_data['y']  # Stop vertical movement
+                    #f_new_y = math.floor(new_y)
+                    c_new_y = math.ceil(new_y)
+                    f_new_x = math.floor(old_x)
+                    c_new_x = math.ceil(old_x)
+                    tileBL = terrain[c_new_y][f_new_x]
+                    tileBR = terrain[c_new_y][c_new_x]
+                    if old_x < player_data['x']:  # Moving left
+                        if tileTL == 0 and tileBL == 0:  # Wall collision to the left
+                            new_x = old_x  # Resume horizontal movement
+                    elif old_x > player_data['x']:  # Moving right
+                        if tileTR == 0 and tileBR == 0:  # Wall collision to the right
+                            new_x = old_x  # Resume horizontal movement
             elif new_y < player_data['y']:  # Moving up
                 if (tileTL == 1 or tileTR == 1) or (tileTL == enemy_team_num or tileTR == enemy_team_num):  # Wall collision to the top
                     new_y = player_data['y']  # Stop vertical movement
-
+                    f_new_y = math.floor(new_y)
+                    #c_new_y = math.ceil(new_y)
+                    f_new_x = math.floor(old_x)
+                    c_new_x = math.ceil(old_x)
+                    tileTL = terrain[f_new_y][f_new_x]
+                    tileTR = terrain[f_new_y][c_new_x]
+                    if old_x < player_data['x']:  # Moving left
+                        if tileTL == 0 and tileBL == 0:  # Wall collision to the left
+                            new_x = old_x  # Resume horizontal movement
+                    elif old_x > player_data['x']:  # Moving right
+                        if tileTR == 0 and tileBR == 0:  # Wall collision to the right
+                            new_x = old_x  # Resume horizontal movement
 
 
 

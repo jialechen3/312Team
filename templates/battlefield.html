@@ -315,80 +315,121 @@ function gameLoop() {
 gameLoop();
 
 function movePlayer() {
-  dx = 0.0;
-  dy = 0.0;
-  if (keyState['ArrowUp']) dy -=0.1;
-  if (keyState['ArrowDown']) dy +=0.1;
-  if (keyState['ArrowLeft']) dx -=0.1;
-  if (keyState['ArrowRight']) dx +=0.1;
-  let nextX = Math.round((pos.x + dx)*100)/100;
-  let nextY =  Math.round((pos.y + dy)*100)/100;
+  let new_x = pos.x;
+  let new_y = pos.y;
+  if (keyState['ArrowUp']) new_y -=0.1;
+  if (keyState['ArrowDown']) new_y +=0.1;
+  if (keyState['ArrowLeft']) new_x -=0.1;
+  if (keyState['ArrowRight']) new_x +=0.1;
 
+  // bounds & terrain check
 
-  // Check map bounds first
-  if (nextX < 0 || nextX > MAP_WIDTH-1 || nextY < 0 || nextY > MAP_HEIGHT-1) {
+  /*if (!(0 <= new_x && new_x <= MAP_WIDTH - 1 && 0 <= new_y && new_y <= MAP_HEIGHT - 1)) {
     return;  // Out of bounds, don't move
   }
 
-  let c_new_x; // Declare outside the if block
-  let c_new_y;
+  // Calculate ceiling and floor values of new_x and new_y
+  let f_new_x = Math.floor(new_x);
+  let c_new_x = (new_x % 1 !== 0) ? Math.ceil(new_x) : f_new_x;
 
-  const f_new_x = Math.floor(nextX);
-  if (nextX % 1 !== 0) {
-    c_new_x = Math.ceil(nextX); // Assign directly to the declared variable
-  } else {
-    c_new_x = f_new_x; // If nextX is already an integer, assign the floored value
-  }
+  let f_new_y = Math.floor(new_y);
+  let c_new_y = (new_y % 1 !== 0) ? Math.ceil(new_y) : f_new_y;
 
-  const f_new_y = Math.floor(nextY);
-  if (nextY % 1 !== 0) {
-    c_new_y = Math.ceil(nextY); // Assign directly to the declared variable
-  } else {
-    c_new_y = f_new_y; // If nextY is already an integer, assign the floored value
-  }
+  // Get the terrain values for each corner
+  let tileTL = terrain[f_new_y][f_new_x];  // Tile Top Left
+  let tileTR = terrain[f_new_y][c_new_x];  // Tile Top Right
+  let tileBL = terrain[c_new_y][f_new_x];  // Tile Bottom Left
+  let tileBR = terrain[c_new_y][c_new_x];  // Tile Bottom Right
 
+  console.log("Before")
+  console.log("tileTL:", tileTL);
+  console.log("tileTR:", tileTR);
+  console.log("tileBL:", tileBL);
+  console.log("tileBR:", tileBR);
 
+  let old_x = new_x;
+  //I think this part is broken because blue wont be able to move out of spawn
+  let enemy_team_num = (pos.team === 'blue') ? 3 : 2;
 
-
-  //const c_new_x = Math.ceil(nextX);  // Ceiling of x for Top Right & Bottom Right
-  //const f_new_x = Math.floor(nextX); // Floor of x for Top Left & Bottom Left
-  //const c_new_y = Math.ceil(nextY);  // Ceiling of y for Bottom Right & Top Right
-  //const f_new_y = Math.floor(nextY); // Floor of y for Top Left & Bottom Left
-  // 🔥 Block movement if next tile is a wall MUST UPDATE WITH NEW MOVMENT
-  //if (terrain[nextY][nextX] === 1) {
-  //  return;
-  //}
-
-  const tileTL = terrain[f_new_y][f_new_x]; // Tile Top Left
-  const tileTR = terrain[f_new_y][c_new_x]; // Tile Top Right
-  const tileBL = terrain[c_new_y][f_new_x]; // Tile Bottom Left
-  const tileBR = terrain[c_new_y][c_new_x]; // Tile Bottom Right
-
-  if ((nextX !== pos.x) && (f_new_x !== c_new_x)) {
-    if (nextX < pos.x) {  // Moving left
-        if (tileTL === 1 || tileBL === 1) {  // Wall collision to the left
-            nextX = pos.x;  // Stop horizontal movement
-        }
-    } else if (nextX > pos.x) {  // Moving right
-        if (tileTR === 1 || tileBR === 1) {  // Wall collision to the right
-            nextX = pos.x;  // Stop horizontal movement
-        }
+  if (new_x !== pos.x && f_new_x !== c_new_x) {
+    if (new_x < pos.x) {  // Moving left
+      if (tileTL === 1 || tileBL === 1 || tileTL === enemy_team_num || tileBL === enemy_team_num) {  // Wall collision to the left
+        new_x = pos.x;  // Stop horizontal movement
+        f_new_x = Math.floor(new_x);
+        //c_new_x = Math.ceil(new_x);
+        tileTL = terrain[f_new_y][f_new_x];
+        tileBL = terrain[c_new_y][f_new_x];
+        console.log("X Check 1")
+        console.log("tileTL:", tileTL);
+        console.log("tileBL:", tileBL);
+      }
+    } else if (new_x > pos.x) {  // Moving right
+      if (tileTR === 1 || tileBR === 1 || tileTR === enemy_team_num || tileBR === enemy_team_num) {  // Wall collision to the right
+        new_x = pos.x;  // Stop horizontal movement
+        //f_new_x = Math.floor(new_x);
+        c_new_x = Math.ceil(new_x);
+        tileTR = terrain[f_new_y][c_new_x];
+        tileBR = terrain[c_new_y][c_new_x];
+        console.log("X Check 1")
+        console.log("tileTR:", tileTR);
+        console.log("tileBR:", tileBR);
+      }
     }
   }
 
-  if ((nextY !== pos.y) && (f_new_y !== c_new_y)) {
-    if (nextY > pos.y) {  // Moving down
-        if (tileBL === 1 || tileBR === 1) {  // Wall collision to the bottom
-            nextY = pos.y;  // Stop vertical movement
+  if (new_y !== pos.y && f_new_y !== c_new_y) {
+    if (new_y > pos.y) {  // Moving down
+      if (tileBL === 1 || tileBR === 1 || tileBL === enemy_team_num || tileBR === enemy_team_num) {  // Wall collision to the bottom
+        new_y = pos.y;  // Stop vertical movement
+        c_new_y = Math.ceil(new_y);
+        f_new_x = Math.floor(new_x);
+        c_new_x = Math.ceil(new_x);
+        tileBL = terrain[c_new_y][f_new_x];
+        tileBR = terrain[c_new_y][c_new_x];
+        console.log("After")
+        console.log("tileTL:", tileTL);
+        console.log("tileTR:", tileTR);
+        console.log("tileBL:", tileBL);
+        console.log("tileBR:", tileBR);
+        // After stopping vertical movement, check horizontal movement
+        if (old_x < pos.x) {  // Moving left
+          if (tileTL === 0 && tileBL === 0) {  // Ensure there's no wall in the left direction
+            new_x = old_x;  // Resume horizontal movement
+          }
+        } else if (old_x > pos.x) {  // Moving right
+          if (tileTR === 0 && tileBR === 0) {  // Ensure there's no wall in the right direction
+            new_x = old_x;  // Resume horizontal movement
+          }
         }
-    } else if (nextY < pos.y) {  // Moving up
-        if (tileTL === 1 || tileTR === 1) {  // Wall collision to the top
-            nextY = pos.y;  // Stop vertical movement
+      }
+    } else if (new_y < pos.y) {  // Moving up
+      if (tileTL === 1 || tileTR === 1 || tileTL === enemy_team_num || tileTR === enemy_team_num) {  // Wall collision to the top
+        new_y = pos.y;  // Stop vertical movement
+        f_new_y = Math.floor(new_y);
+        f_new_x = Math.floor(new_x);
+        c_new_x = Math.ceil(new_x);
+        tileTL = terrain[f_new_y][f_new_x];
+        tileTR = terrain[f_new_y][c_new_x];
+        console.log("After")
+        console.log("tileTL:", tileTL);
+        console.log("tileTR:", tileTR);
+        console.log("tileBL:", tileBL);
+        console.log("tileBR:", tileBR);
+        // After stopping vertical movement, check horizontal movement
+        if (old_x < pos.x) {  // Moving left
+          if (tileTL === 0 && tileBL === 0) {  // Ensure there's no wall in the left direction
+            new_x = old_x;  // Resume horizontal movement
+          }
+        } else if (old_x > pos.x) {  // Moving right
+          if (tileTR === 0 && tileBR === 0) {  // Ensure there's no wall in the right direction
+            new_x = old_x;  // Resume horizontal movement
+          }
         }
+      }
     }
   }
-
-  if(pos.x == nextX && pos.y == nextY) {
+  */
+  if(pos.x === new_x && pos.y === new_y) {
       return;
   }
 
