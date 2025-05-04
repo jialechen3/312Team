@@ -59,7 +59,6 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
             if terrain_data:
                 emit('load_terrain', {'terrain': terrain_data}, room=request.sid, namespace='/battlefield')
 
-
     @socketio.on('move', namespace='/battlefield')
     def handle_move(data):
         room_id = data.get('roomId')
@@ -73,17 +72,17 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
         if not room:
             return
 
-        # find this player's data in the DB
+        # fetch once
+        terrain = room.get('terrain', [[0] * 100 for _ in range(100)])
         player_list = room.get('players', [])
         player_data = next((p for p in player_list if p['id'] == player), None)
         if not player_data:
             return
 
-        # Prevent dead players from moving
         if player_status.get(room_id, {}).get(player, {}).get('status') == "dead":
             return
 
-        # compute new position
+        # movement logic
         new_x, new_y = player_data['x'], player_data['y']
         if keyPress['ArrowUp']:
             new_y = round((new_y - 0.1)*100)/100
@@ -96,108 +95,43 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
 
         x_check, y_check = False, False
         if not 0 <= new_x <= MAP_WIDTH-1:
-            new_x = clamp(new_x,0,MAP_WIDTH-1)
+            new_x = clamp(new_x, 0, MAP_WIDTH-1)
             x_check = True
-        if not 0 <= new_y <= MAP_HEIGHT - 1:
-            new_y = clamp(new_y, 0, MAP_HEIGHT - 1)
+        if not 0 <= new_y <= MAP_HEIGHT-1:
+            new_y = clamp(new_y, 0, MAP_HEIGHT-1)
             y_check = True
         if x_check and y_check:
             return
 
-        room = room_collection.find_one({'id': room_id})
-        terrain = room.get('terrain', [[0] * 100 for _ in range(100)])  # fallback if missing
-
         f_new_x = math.floor(new_x)
-        if new_x%1 != 0:
-            c_new_x = math.ceil(new_x)
-        else:
-            c_new_x = f_new_x
-
+        c_new_x = math.ceil(new_x) if new_x % 1 != 0 else f_new_x
         f_new_y = math.floor(new_y)
-        if new_y%1 != 0:
-            c_new_y = math.ceil(new_y)
-        else:
-            c_new_y = f_new_y
+        c_new_y = math.ceil(new_y) if new_y % 1 != 0 else f_new_y
 
-        tileTL = terrain[f_new_y][f_new_x] #tile Top Left
-        tileTR = terrain[f_new_y][c_new_x] #tile Top Right
-        tileBL = terrain[c_new_y][f_new_x] #tile Bottom Left
-        tileBR = terrain[c_new_y][c_new_x] #tile Bottom Right
+        tileTL = terrain[f_new_y][f_new_x]
+        tileTR = terrain[f_new_y][c_new_x]
+        tileBL = terrain[c_new_y][f_new_x]
+        tileBR = terrain[c_new_y][c_new_x]
 
-        #emit('terrain_data', terrain, room=room_id, namespace='/battlefield') this was in the code but not doing anything since the terrain_data socket doesnt exist
         old_x = new_x
         enemy_team_num = 3 if player_data.get('team') == 'blue' else 2
-        if new_x != player_data['x'] and not f_new_x == c_new_x:
-            if new_x < player_data['x']:  # Moving left
-                if (tileTL == 1 or tileBL == 1) or (tileTL == enemy_team_num or tileBL == enemy_team_num):  # Wall collision to the left
-                    new_x = player_data['x']  # Stop horizontal movement
-                    f_new_x = math.floor(new_x)
-                    #c_new_x = math.ceil(new_x)
-                    tileTL = terrain[f_new_y][f_new_x]
-                    tileBL = terrain[c_new_y][f_new_x]
-            elif new_x > player_data['x']:  # Moving right
-                if (tileTR == 1 or tileBR == 1) or (tileTR == enemy_team_num or tileBR == enemy_team_num):  # Wall collision to the right
-                    new_x = player_data['x']  # Stop horizontal movement
-                    #f_new_x = math.floor(new_x)
-                    c_new_x = math.ceil(new_x)
-                    tileTR = terrain[f_new_y][c_new_x]
-                    tileBR = terrain[c_new_y][c_new_x]
-        if new_y != player_data['y'] and not f_new_y == c_new_y:
-            if new_y > player_data['y']:  # Moving down
-                if (tileBL == 1 or tileBR == 1) or (tileBL == enemy_team_num or tileBR == enemy_team_num):  # Wall collision to the bottom
-                    new_y = player_data['y']  # Stop vertical movement
-                    #f_new_y = math.floor(new_y)
-                    c_new_y = math.ceil(new_y)
-                    f_new_x = math.floor(old_x)
-                    c_new_x = math.ceil(old_x)
-                    tileBL = terrain[c_new_y][f_new_x]
-                    tileBR = terrain[c_new_y][c_new_x]
-                    if old_x < player_data['x']:  # Moving left
-                        if tileTL == 0 and tileBL == 0:  # Wall collision to the left
-                            new_x = old_x  # Resume horizontal movement
-                    elif old_x > player_data['x']:  # Moving right
-                        if tileTR == 0 and tileBR == 0:  # Wall collision to the right
-                            new_x = old_x  # Resume horizontal movement
-            elif new_y < player_data['y']:  # Moving up
-                if (tileTL == 1 or tileTR == 1) or (tileTL == enemy_team_num or tileTR == enemy_team_num):  # Wall collision to the top
-                    new_y = player_data['y']  # Stop vertical movement
-                    f_new_y = math.floor(new_y)
-                    #c_new_y = math.ceil(new_y)
-                    f_new_x = math.floor(old_x)
-                    c_new_x = math.ceil(old_x)
-                    tileTL = terrain[f_new_y][f_new_x]
-                    tileTR = terrain[f_new_y][c_new_x]
-                    if old_x < player_data['x']:  # Moving left
-                        if tileTL == 0 and tileBL == 0:  # Wall collision to the left
-                            new_x = old_x  # Resume horizontal movement
-                    elif old_x > player_data['x']:  # Moving right
-                        if tileTR == 0 and tileBR == 0:  # Wall collision to the right
-                            new_x = old_x  # Resume horizontal movement
 
+        if new_x != player_data['x'] and f_new_x != c_new_x:
+            if new_x < player_data['x']:
+                if (tileTL in (1, enemy_team_num)) or (tileBL in (1, enemy_team_num)):
+                    new_x = player_data['x']
+            elif new_x > player_data['x']:
+                if (tileTR in (1, enemy_team_num)) or (tileBR in (1, enemy_team_num)):
+                    new_x = player_data['x']
 
+        if new_y != player_data['y'] and f_new_y != c_new_y:
+            if new_y > player_data['y']:
+                if (tileBL in (1, enemy_team_num)) or (tileBR in (1, enemy_team_num)):
+                    new_y = player_data['y']
+            elif new_y < player_data['y']:
+                if (tileTL in (1, enemy_team_num)) or (tileTR in (1, enemy_team_num)):
+                    new_y = player_data['y']
 
-        '''if player_data.get('team') != 'blue':
-            if (new_y > player_data['y'] and (tileBL or tileBR == 2)) or (new_y < player_data['y'] and (tileTL or tileTR == 2)):
-                new_y = player_data['y']
-            if (new_x < player_data['x'] and (tileTL or tileBL == 2)) or (new_x < player_data['x'] and (tileTR or tileBR == 2)):
-                new_x = player_data['x']
-        elif player_data.get('team') != 'red':
-            if (new_y > player_data['y'] and (tileBL or tileBR == 3)) or (new_y < player_data['y'] and (tileTL or tileTR == 3)):
-                new_y = player_data['y']
-            if (new_x < player_data['x'] and (tileTL or tileBL == 3)) or (new_x < player_data['x'] and (tileTR or tileBR == 3)):
-                new_x = player_data['x']
-        else:
-            print(f"Player is not on either blue or red team")
-            return'''
-
-        '''if tile == 1:
-            return
-        elif tile == 2 and player_data.get('team') != 'blue':
-            return
-        elif tile == 3 and player_data.get('team') != 'red':
-            return'''
-
-        # write move into MongoDB
         result = room_collection.update_one(
             {'id': room_id, 'players.id': player},
             {'$set': {'players.$.x': new_x, 'players.$.y': new_y}}
@@ -205,67 +139,51 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
         if result.matched_count == 0:
             return
 
-        # refresh in-memory positions
-        updated_room = room_collection.find_one({'id': room_id})
-        updated_players = updated_room.get('players', [])
+        # update in-memory and enrich with avatars
+        user_cache = {}
+        for p in room['players']:
+            pid = p['id']
+            if pid not in user_cache:
+                user_cache[pid] = user_collection.find_one({"username": pid}) or {}
+            p['avatar'] = choose_avatar(pid, room, user_cache[pid])
+
         room_player_data[room_id] = {
             p['id']: {'x': p['x'], 'y': p['y']}
-            for p in updated_players
-            if 'id' in p and p['id'] is not None
+            for p in room['players'] if p.get('id')
         }
-        room_doc = room_collection.find_one({"id": room_id})
-        for p in updated_players:
-            user_doc = user_collection.find_one({"username": p["id"]})
-            p["avatar"] = choose_avatar(p["id"], room_doc, user_doc)
 
-        # ── COLLISION / TAGGING ──
+        # tagging logic
         attacking_team = room.get('attacking_team')
-        if not attacking_team:
-            print()
-        else:
+        if attacking_team:
             for other_id, pos in room_player_data[room_id].items():
                 if other_id == player:
                     continue
-
                 if abs(pos['x'] - new_x) <= 1 and abs(pos['y'] - new_y) <= 1:
-                    target_data = next((p for p in updated_players if p['id'] == other_id), None)
+                    target_data = next((p for p in room['players'] if p['id'] == other_id), None)
                     if not target_data:
                         continue
 
-                    mover_team  = player_data.get('team')
+                    mover_team = player_data.get('team')
                     target_team = target_data.get('team')
-
-                    # ✅ Make tagging symmetric
                     if mover_team == target_team:
-                        continue  # same team, no tagging
+                        continue
 
-                    # 🚨 Either mover or target must be attacker
                     if mover_team == attacking_team:
-                        victim = other_id
-                        tagger = player
+                        victim, tagger = other_id, player
                     elif target_team == attacking_team:
-                        victim = player
-                        tagger = other_id
+                        victim, tagger = player, other_id
                     else:
-                        continue  # Neither is attacker, no tagging
+                        continue
 
                     if player_status.get(room_id, {}).get(victim, {}).get('status') == 'dead':
                         continue
+
                     emit('player_tagged', {'tagger': tagger, 'target': victim}, room=room_id)
+                    player_status.setdefault(room_id, {})[victim] = {'status': 'dead', 'tagger': tagger}
+                    socketio.start_background_task(respawn_player, socketio, room_collection, room_id, victim)
+                    break
 
-                    # mark victim dead
-                    player_status.setdefault(room_id, {})[victim] = {
-                        'status': 'dead',
-                        'tagger': tagger
-                    }
-                    socketio.start_background_task(
-                        respawn_player, socketio, room_collection, room_id, victim
-                    )
-                    break  # only allow 1 tag per move
-
-
-        # broadcast the updated positions back to everyone
-        emit('player_positions', updated_players, room=room_id, namespace='/battlefield')
+        emit('player_positions', room['players'], room=room_id, namespace='/battlefield')
 
     @socketio.on('disconnect', namespace='/battlefield')
     def handle_battlefield_disconnect():
