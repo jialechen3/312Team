@@ -1,19 +1,18 @@
+import eventlet
+eventlet.monkey_patch()
 import hashlib
 import os
 import logging
-from gevent import monkey
-monkey.patch_all()
 from flask import request, jsonify, Blueprint, g
 from flask import Flask, render_template
 from flask_socketio import SocketIO
-
 from util.auth import auth_bp, hash_token
 from util.battlefield import battlefield_bp, register_battlefield_handlers
 from util.database import user_collection, room_collection
 from util.rooms import register_room_handlers
 
 app = Flask(__name__)
-socketio = SocketIO(app, async_mode='threading')
+socketio = SocketIO(app, async_mode='eventlet')
 @app.context_processor
 def inject_user():
     return dict(current_user=g.user)
