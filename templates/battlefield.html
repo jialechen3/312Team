@@ -100,9 +100,7 @@
 <!-- map canvas -->
 <canvas id="game" width="1200" height="750"></canvas>
 <canvas
-  id="minimap"
-  width="200.0"
-  height="200.0"
+  id="minimap" width="150" height="150"
   style="
     position: absolute;
     bottom: 20px;
@@ -180,7 +178,7 @@ function paintCorner() {
 const roomId = new URLSearchParams(location.search).get('room');
 if (!roomId) { alert('Room ID missing'); throw new Error('No room id'); }
 
-const TILE_SIZE = 40.0, MAP_WIDTH = 100.0, MAP_HEIGHT = 100.0;
+const TILE_SIZE = 40.0, MAP_WIDTH = 50.0, MAP_HEIGHT = 50.0;
 let terrain = Array.from({ length: MAP_HEIGHT }, () => Array(MAP_WIDTH).fill(0));
 
 

@@ -29,10 +29,9 @@ def add_security_headers(response):
     status = response.status_code
     username = getattr(g, 'user', {}).get('username') if getattr(g, 'user', None) else 'Unauthenticated'
 
-    # ✅ Main log: lightweight summary only
+
     logging.info(f"{ip} - {username} - {method} {path} → {status}")
 
-    # ✅ Raw log: full details (with body size control & content filtering)
     if response.content_type and not response.content_type.startswith('text'):
         raw_logger.info(f"RESPONSE: {method} {path} → {status} — {response.content_type} (not logged)")
     else:

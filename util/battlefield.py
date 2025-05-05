@@ -7,20 +7,21 @@ import math
 from util.rooms import choose_avatar
 
 # Constants for map size
-MAP_WIDTH = 100
-MAP_HEIGHT = 100
+MAP_WIDTH = 50
+MAP_HEIGHT = 50
 
 terrain = [[0 for _ in range(MAP_WIDTH)] for _ in range(MAP_HEIGHT)]
 
 for y in range(MAP_HEIGHT):
     for x in range(MAP_WIDTH):
-        if y < 5 and x >= MAP_WIDTH - 5:
-            inside = (x >= MAP_WIDTH - 4 and x <= MAP_WIDTH - 2) and (y >= 1 and y <= 3)
+        if y < 4 and x >= MAP_WIDTH - 4:
+            inside = (x >= MAP_WIDTH - 3 and x <= MAP_WIDTH - 2) and (y >= 1 and y <= 2)
             terrain[y][x] = 0 if inside else 3  # red base walls
-        elif y >= MAP_HEIGHT - 5 and x < 5:
+        elif y >= MAP_HEIGHT - 4 and x < 4:
             terrain[y][x] = 2  # blue base walls
-        elif (x + y) % 17 == 0 and 5 < x < MAP_WIDTH - 6 and 5 < y < MAP_HEIGHT - 6:
+        elif (x + y) % 11 == 0 and 3 < x < MAP_WIDTH - 4 and 3 < y < MAP_HEIGHT - 4:
             terrain[y][x] = 1  # scattered maze walls
+
 
 # Global memory
 room_player_data = {}  # { room_id: { player_name: {"x": int, "y": int, "team": str} } }
@@ -76,7 +77,7 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
             return
 
         # fetch once
-        terrain = room.get('terrain', [[0] * 100 for _ in range(100)])
+        terrain = room.get('terrain', [[0] * MAP_WIDTH for _ in range(MAP_HEIGHT)])
         player_list = room.get('players', [])
         player_data = next((p for p in player_list if p['id'] == player), None)
         if not player_data:

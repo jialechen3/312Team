@@ -20,14 +20,6 @@
       text-shadow: 2px 2px 6px #000;
     }
 
-    .container {
-      max-width: 600px;
-      margin: 0 auto;
-      background-color: rgba(42, 42, 64, 0.85);
-      padding: 20px;
-      border-radius: 12px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.5);
-    }
 
     .avatar-circle {
       width: 32px;
@@ -75,6 +67,57 @@
       justify-content: space-between;
       align-items: center;
     }
+
+    .lobby-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 30px;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+/* Left column: room list */
+.container {
+  flex: 1;
+  background-color: rgba(42, 42, 64, 0.85);
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 0 10px rgba(0,0,0,0.5);
+}
+
+/* Right column: leaderboard */
+.leaderboard {
+  width: 280px;
+  flex-shrink: 0;
+  background-color: rgba(42, 42, 64, 0.85);
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 0 10px rgba(0,0,0,0.5);
+}
+
+    .leaderboard h2 {
+      margin-top: 0;
+      font-size: 1.5rem;
+      text-align: center;
+    }
+
+    #leaderboardList {
+      list-style: none;
+      padding: 0;
+      margin-top: 10px;
+    }
+
+    #leaderboardList li {
+      background-color: #3b3b5c;
+      margin-bottom: 10px;
+      padding: 8px;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      display: flex;
+      justify-content: space-between;
+    }
+
   </style>
 </head>
 <body>
@@ -109,13 +152,25 @@
     </div>
   {% endif %}
 
-  <h1>Game Lobby</h1>
-  <div class="container">
-    <input type="text" id="roomName" placeholder="Enter room name">
-    <button onclick="createRoom()">Create Room</button>
+    <h1>Game Lobby</h1>
+    <div class="lobby-wrapper">
 
-    <ul id="roomList"></ul>
-  </div>
+      <!-- Left: Room creation and list -->
+      <div class="container">
+        <input type="text" id="roomName" placeholder="Enter room name">
+        <button onclick="createRoom()">Create Room</button>
+
+        <ul id="roomList"></ul>
+      </div>
+
+      <!-- Right: Leaderboard -->
+      <div class="leaderboard">
+        <h2>🏆 Leaderboard</h2>
+        <ul id="leaderboardList"></ul>
+      </div>
+
+    </div> <!-- End of .lobby-wrapper -->
+
 
   <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 
@@ -126,15 +181,38 @@
       socket.emit('page_ready', { page: 'create_lobby' });
     });
 
-    socket.on('room_list', (rooms) => {
-      const roomList = document.getElementById('roomList');
-      roomList.innerHTML = '';
-      rooms.forEach(room => {
+ socket.on('room_list', (rooms) => {
+  const roomList = document.getElementById('roomList');
+  roomList.innerHTML = '';
+  rooms.forEach(room => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span>${room.name}</span> <button onclick="joinRoom('${room.id}')">Join</button>`;
+    roomList.appendChild(li);
+  });
+});
+
+
+ socket.on('leaderboard_updated', () => {
+  loadLeaderboard();  // ⬅️ this is the function you already defined earlier
+});
+
+// Load leaderboard on page load
+function loadLeaderboard() {
+  fetch('/api/leaderboard')
+    .then(res => res.json())
+    .then(data => {
+      const lbList = document.getElementById('leaderboardList');
+      lbList.innerHTML = '';
+      data.forEach((p, i) => {
         const li = document.createElement('li');
-        li.innerHTML = `<span>${room.name}</span> <button onclick="joinRoom('${room.id}')">Join</button>`;
-        roomList.appendChild(li);
+        li.innerHTML = `<span>${i + 1}. ${p.username}</span><span>${p.wins} wins</span>`;
+        lbList.appendChild(li);
       });
     });
+}
+
+loadLeaderboard();  // 👈 Call it once when the page loads
+
 
     function createRoom() {
       const roomName = document.getElementById('roomName').value.trim();

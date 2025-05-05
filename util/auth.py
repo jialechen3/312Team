@@ -42,7 +42,8 @@ def register():
         "id": user_id,
         "username": user,
         "password": hashed_pw,
-        "auth_token": None
+        "auth_token": None,
+        "wins": 0
     })
 
     logging.info(f"Registration successful: user '{user}' created")
@@ -148,8 +149,7 @@ def profile():
 
     # GET — render form
 
-
-    return render_template('profile.html')
+    return render_template('profile.html', wins=user.get('wins', 0))
 
 
 @auth_bp.route('/api/whoami')
@@ -164,3 +164,13 @@ def whoami():
 
     return jsonify({"username": None})
 
+@auth_bp.route('/api/leaderboard')
+def leaderboard():
+    players = list(user_collection.find({}, {"username": 1, "wins": 1}).sort("wins", -1))
+    return jsonify([
+        {
+            "username": u["username"],
+            "wins": u.get("wins", 0)
+        }
+        for u in players
+    ])

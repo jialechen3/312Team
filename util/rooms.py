@@ -240,10 +240,10 @@ def register_room_handlers(socketio, user_collection, room_collection):
         for player in players_to_start:
             # Determine spawn position
             if player in room.get('red_team', []):
-                spawn_x, spawn_y = 97, 2
+                spawn_x, spawn_y = 47, 2
                 team = "red"
             else:
-                spawn_x, spawn_y = 2, 97
+                spawn_x, spawn_y = 2, 47
                 team = "blue"
 
             # Check if player already exists in players list (shouldn't, but safe check)
@@ -347,21 +347,21 @@ def register_room_handlers(socketio, user_collection, room_collection):
 # server-side battlefield terrain generation (Python)
 import random
 
-def generate_battlefield_terrain(width=100, height=100):
+def generate_battlefield_terrain(width=50, height=50):
     terrain = [[0 for _ in range(width)] for _ in range(height)]
 
-    # Define safe zones
-    safe_zone_red = (0, 0, 5, 5)
-    safe_zone_blue = (width-5, height-5, width, height)
+    # Define safe zones (smaller for 50x50)
+    safe_zone_red = (0, 0, 4, 4)
+    safe_zone_blue = (width-4, height-4, width, height)
 
     def in_safe_zone(x, y):
         return (safe_zone_red[0] <= x < safe_zone_red[2] and safe_zone_red[1] <= y < safe_zone_red[3]) or \
                (safe_zone_blue[0] <= x < safe_zone_blue[2] and safe_zone_blue[1] <= y < safe_zone_blue[3])
 
-    # ✨ Step 1: Create big wall blocks
-    for _ in range(40):  # More blocks (used to be 25)
-        block_width = random.randint(3, 6)
-        block_height = random.randint(3, 6)
+    # Step 1: Create medium-sized wall blocks
+    for _ in range(20):  # Fewer blocks than before
+        block_width = random.randint(2, 4)
+        block_height = random.randint(2, 4)
         start_x = random.randint(0, width - block_width - 1)
         start_y = random.randint(0, height - block_height - 1)
 
@@ -370,19 +370,20 @@ def generate_battlefield_terrain(width=100, height=100):
                 if not in_safe_zone(x, y):
                     terrain[y][x] = 1  # Wall
 
-    # ✨ Step 2: Sprinkle small single-tile obstacles
-    for _ in range(300):  # Add many scattered little tiles
-        x = random.randint(0, width-1)
-        y = random.randint(0, height-1)
+    # Step 2: Sprinkle small obstacles
+    for _ in range(100):  # Scaled down for smaller map
+        x = random.randint(0, width - 1)
+        y = random.randint(0, height - 1)
         if not in_safe_zone(x, y) and terrain[y][x] == 0:
             terrain[y][x] = 1
 
-    # ✨ Step 3: Make spawn zones clean
+    # Step 3: Mark safe zones with team numbers
     for x in range(width):
         for y in range(height):
-            if x >= width-5 and y < 5:
+            if x >= width - 4 and y < 4:
                 terrain[y][x] = 3  # Red team safe
-            elif x < 5 and y >= height-5:
+            elif x < 4 and y >= height - 4:
                 terrain[y][x] = 2  # Blue team safe
 
     return terrain
+

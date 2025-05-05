@@ -96,10 +96,21 @@ def _end_round(sock: SocketIO, room_id: str, room_collection) -> None:
         sock.emit('match_over',
                   {"winner": winner, "red": red, "blue": blue},
                   room=room_id, namespace='/battlefield')
+
+        # ✅ UPDATE USER WINS
+        if winner in ["red", "blue"]:
+            winners = [p['id'] for p in room.get('players', []) if p.get('team') == winner]
+            for uid in winners:
+                room_collection.database['users'].update_one(  # ⚠️ adjust to your actual user collection
+                    {"username": uid},
+                    {"$inc": {"wins": 1}}
+                )
+            sock.emit('leaderboard_updated', namespace='/lobby')
+
+        # 🔥 Cleanup room
         room_collection.delete_one({'id': room_id})
         round_state.pop(room_id, None)
-        return  # match finished ✅
-
+        return
 
     # flip taggers for next round
     s["taggers"] = "blue" if s["taggers"] == "red" else "red"
