@@ -3,6 +3,8 @@ eventlet.monkey_patch()
 import hashlib
 import os
 import logging
+import traceback
+from flask import Response as FlaskResponse
 from flask import request, jsonify, Blueprint, g
 from flask import Flask, render_template
 from flask_socketio import SocketIO
@@ -20,6 +22,30 @@ def inject_user():
 @app.after_request
 def add_security_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
+
+    ip = request.remote_addr
+    method = request.method
+    path = request.path
+    status = response.status_code
+    username = getattr(g, 'user', {}).get('username') if getattr(g, 'user', None) else 'Unauthenticated'
+
+    # ✅ Main log: lightweight summary only
+    logging.info(f"{ip} - {username} - {method} {path} → {status}")
+
+    # ✅ Raw log: full details (with body size control & content filtering)
+    if response.content_type and not response.content_type.startswith('text'):
+        raw_logger.info(f"RESPONSE: {method} {path} → {status} — {response.content_type} (not logged)")
+    else:
+        try:
+            preview = response.get_data(as_text=True)[:2048]
+        except Exception:
+            preview = "[Could not decode response body]"
+        raw_logger.info(
+            f"RESPONSE: {method} {path} → {status}\n"
+            f"Headers: {dict(response.headers)}\n"
+            f"Body:\n{preview}"
+        )
+
     return response
 
 app.config['SECRET_KEY'] = 'secret!'  # Replace with a secure key in production
@@ -28,6 +54,7 @@ app.config['SECRET_KEY'] = 'secret!'  # Replace with a secure key in production
 if not os.path.exists('logs'):
     os.makedirs('logs')
 
+# Setup main logger
 logging.basicConfig(
     filename='logs/server.log',
     level=logging.INFO,
@@ -35,11 +62,35 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
+# Setup raw HTTP logger
+raw_logger = logging.getLogger('raw')
+raw_logger.setLevel(logging.INFO)
+raw_logger.propagate = False  
+raw_handler = logging.FileHandler('logs/raw_http.log')
+raw_handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
+raw_logger.addHandler(raw_handler)
+
 def log_request_info():
     ip = request.remote_addr
     method = request.method
     path = request.path
-    logging.info(f"{ip} - {method} {path}")
+    username = getattr(g, 'user', {}).get('username') if getattr(g, 'user', None) else 'Unauthenticated'
+
+    logging.info(f"{ip} - {username} - {method} {path}")
+
+    # Raw request logging (limit to 2048 bytes, redact sensitive info)
+    if request.content_type and 'multipart' in request.content_type:
+        raw_logger.info(f"{method} {path} from {ip} — multipart form (headers only)")
+        return
+
+    headers = dict(request.headers)
+    headers.pop('Cookie', None)  # Remove cookies
+    sanitized_headers = {k: v for k, v in headers.items() if 'auth_token' not in v.lower()}
+
+    body_preview = request.get_data()[:2048].decode(errors='replace') if request.data else ''
+
+    raw_logger.info(f"REQUEST: {method} {path} from {ip}\nHeaders: {sanitized_headers}\nBody:\n{body_preview}")
+
 app.before_request(log_request_info)
 
 # Blueprints and socketio event registration
@@ -47,6 +98,12 @@ app.register_blueprint(auth_bp)
 app.register_blueprint(battlefield_bp)
 register_room_handlers(socketio, user_collection, room_collection)
 register_battlefield_handlers(socketio, user_collection, room_collection)
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    logging.exception(f"Unhandled exception during request to {request.path}:")
+    return "Internal Server Error", 500
+
 
 # Routes
 @app.route('/')
@@ -66,4 +123,7 @@ def lobby_by_id(lobby_id):
 
 # SocketIO Server run
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=8080, allow_unsafe_werkzeug=True, debug=False)
+    try:
+        socketio.run(app, host='0.0.0.0', port=8080, allow_unsafe_werkzeug=True, debug=False)
+    except Exception:
+        logging.exception("Unhandled server exception:\n" + traceback.format_exc())
