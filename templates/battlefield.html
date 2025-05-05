@@ -215,6 +215,20 @@ socket.on('player_positions', list => {
   draw();
   drawMinimap(players);
 });
+socket.on('player_moved', data => {
+  const { id, x, y } = data;
+
+  if (players[id]) {
+    players[id].x = x;
+    players[id].y = y;
+
+    if (id === playerId) {
+      pos = { x, y };  // Update local player's position
+    }
+
+    draw();
+  }
+});
 
 socket.on('player_tagged', ({ target }) => {
   deadPlayers[target] = true;

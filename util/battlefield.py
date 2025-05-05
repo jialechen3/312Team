@@ -1,7 +1,8 @@
 from flask import Blueprint, render_template, request
 from flask_socketio import emit, join_room
 from util.auth import hash_token
-import time
+from eventlet import sleep
+from eventlet.semaphore import Semaphore
 import math
 from util.rooms import choose_avatar
 
@@ -24,6 +25,8 @@ for y in range(MAP_HEIGHT):
 # Global memory
 room_player_data = {}  # { room_id: { player_name: {"x": int, "y": int, "team": str} } }
 player_status = {}     # { room_id: { player_name: "alive" or "dead", dx: -2.0 - 2.0, dy: -2.0 - 2.0} }
+room_player_data_lock = Semaphore()
+player_status_lock = Semaphore()
 
 def register_battlefield_handlers(socketio, user_collection, room_collection):
 
@@ -79,8 +82,10 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
         if not player_data:
             return
 
-        if player_status.get(room_id, {}).get(player, {}).get('status') == "dead":
-            return
+        with player_status_lock:
+            if player_status.get(room_id, {}).get(player, {}).get('status') == "dead":
+                return
+
 
         # movement logic
         new_x, new_y = player_data['x'], player_data['y']
@@ -147,43 +152,46 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
                 user_cache[pid] = user_collection.find_one({"username": pid}) or {}
             p['avatar'] = choose_avatar(pid, room, user_cache[pid])
 
-        room_player_data[room_id] = {
-            p['id']: {'x': p['x'], 'y': p['y']}
-            for p in room['players'] if p.get('id')
-        }
+        with room_player_data_lock:
+            room_player_data[room_id] = {
+                p['id']: {'x': p['x'], 'y': p['y']}
+                for p in room['players'] if p.get('id')
+            }
+
 
         # tagging logic
         attacking_team = room.get('attacking_team')
         if attacking_team:
-            for other_id, pos in room_player_data[room_id].items():
-                if other_id == player:
-                    continue
-                if abs(pos['x'] - new_x) <= 1 and abs(pos['y'] - new_y) <= 1:
-                    target_data = next((p for p in room['players'] if p['id'] == other_id), None)
-                    if not target_data:
+            with room_player_data_lock:
+                for other_id, pos in room_player_data[room_id].items():
+                    if other_id == player:
                         continue
+                    if abs(pos['x'] - new_x) <= 1 and abs(pos['y'] - new_y) <= 1:
+                        target_data = next((p for p in room['players'] if p['id'] == other_id), None)
+                        if not target_data:
+                            continue
 
-                    mover_team = player_data.get('team')
-                    target_team = target_data.get('team')
-                    if mover_team == target_team:
-                        continue
+                        mover_team = player_data.get('team')
+                        target_team = target_data.get('team')
+                        if mover_team == target_team:
+                            continue
 
-                    if mover_team == attacking_team:
-                        victim, tagger = other_id, player
-                    elif target_team == attacking_team:
-                        victim, tagger = player, other_id
-                    else:
-                        continue
+                        if mover_team == attacking_team:
+                            victim, tagger = other_id, player
+                        elif target_team == attacking_team:
+                            victim, tagger = player, other_id
+                        else:
+                            continue
 
-                    if player_status.get(room_id, {}).get(victim, {}).get('status') == 'dead':
-                        continue
+                        with player_status_lock:
+                            if player_status.get(room_id, {}).get(victim, {}).get('status') == 'dead':
+                                continue
+                            player_status.setdefault(room_id, {})[victim] = {'status': 'dead', 'tagger': tagger}
+                        emit('player_tagged', {'tagger': tagger, 'target': victim}, room=room_id)
+                        socketio.start_background_task(respawn_player, socketio, room_collection, room_id, victim)
+                        break
 
-                    emit('player_tagged', {'tagger': tagger, 'target': victim}, room=room_id)
-                    player_status.setdefault(room_id, {})[victim] = {'status': 'dead', 'tagger': tagger}
-                    socketio.start_background_task(respawn_player, socketio, room_collection, room_id, victim)
-                    break
-
-        emit('player_positions', room['players'], room=room_id, namespace='/battlefield')
+        emit('player_moved', {'id': player, 'x': new_x, 'y': new_y}, room=room_id, namespace='/battlefield')
 
     @socketio.on('disconnect', namespace='/battlefield')
     def handle_battlefield_disconnect():
@@ -210,8 +218,7 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
             })
 
             updated = room_collection.find_one({"id": room_id})
-            socketio.emit('player_positions', updated.get('players', []), room=room_id, namespace='/battlefield')
-
+            socketio.emit('player_left', {'id': username}, room=room_id, namespace='/battlefield')
 
     #gives latest player info after respawn
     @socketio.on('request_positions', namespace='/battlefield')
@@ -226,22 +233,28 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
 
         username = user['username']
 
-        # Find which room they are in
+        # Find the room the user is in and get the latest full document
         room = room_collection.find_one({"players.id": username})
         if not room:
             return
 
         room_id = room['id']
-        emit('player_positions', room.get('players', []), room=request.sid, namespace='/battlefield')
+        
+        # Now re-fetch the full room document by its id to ensure up-to-date player list
+        updated_room = room_collection.find_one({"id": room_id})
+        if not updated_room:
+            return
+
+        emit('player_positions', updated_room.get('players', []), room=request.sid, namespace='/battlefield')
 
 
 def respawn_player(socketio, room_collection, room_id, player):
-    time.sleep(5)  # 5 seconds dead
+    sleep(5)  # 5 seconds dead
 
-    if room_id not in player_status or player not in player_status[room_id]:
-        return
-
-    tagger = player_status[room_id][player].get('tagger')
+    with player_status_lock:
+        if room_id not in player_status or player not in player_status[room_id]:
+            return
+        tagger = player_status[room_id][player].get('tagger')
 
     # Fetch the tagger's team
     room = room_collection.find_one({'id': room_id})
@@ -259,11 +272,14 @@ def respawn_player(socketio, room_collection, room_id, player):
         {"id": room_id, "players.id": player},
         {"$set": {"players.$.team": new_team}}
     )
+    updated_room = room_collection.find_one({"id": room_id})
+    socketio.emit('player_positions', updated_room.get('players', []), room=room_id, namespace='/battlefield')
 
     # Mark as alive
-    player_status[room_id][player] = {
-        "status": "alive"
-    }
+    with player_status_lock:
+        player_status[room_id][player] = {
+            "status": "alive"
+        }
 
     # Tell clients
     socketio.emit('player_respawned', {"player": player}, room=room_id, namespace='/battlefield')

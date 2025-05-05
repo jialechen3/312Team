@@ -1,7 +1,7 @@
 import re
 import os
 import html
-
+import logging
 from flask import Flask, render_template, Blueprint, redirect, jsonify
 from flask import request, g
 from flask import request,make_response
@@ -23,14 +23,18 @@ def register():
     password = data.get('password')
 
     if not user or not password:
+        logging.info(f"Registration attempt failed: missing credentials (user: {user})")
         return render_template('register.html', error="Missing credentials")
 
     if not validate_password(password):
+        logging.info(f"Registration attempt failed: weak password (user: {user})")
         return render_template('register.html', error="Password must be at least 8 characters, contain uppercase, lowercase, number, and special character.")
 
     if user_collection.find_one({"username": user}):
+        logging.info(f"Registration attempt failed: username '{user}' already taken")
         return render_template('register.html', error="Username already taken")
 
+    # Success
     hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
     user_id = str(uuid.uuid4())
 
@@ -41,31 +45,38 @@ def register():
         "auth_token": None
     })
 
+    logging.info(f"Registration successful: user '{user}' created")
     resp = make_response(redirect("/"))
     resp.set_cookie("session", user_id)
     return resp
+
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'GET':
         return render_template('login.html')
-    data = request.form  # or request.get_json() if using JSON body
+
+    data = request.form
     user = data.get('username')
     password = data.get('password')
 
     if not user or not password:
+        logging.info(f"Login attempt failed: missing credentials (user: {user})")
         return "Missing credentials", 400
 
     dbEntry = user_collection.find_one({'username': user})
     if not dbEntry:
+        logging.info(f"Login attempt failed: username '{user}' does not exist")
         return render_template("login.html", error="Incorrect username")
 
     if not bcrypt.checkpw(password.encode(), dbEntry["password"].encode()):
+        logging.info(f"Login attempt failed: wrong password for user '{user}'")
         return render_template("login.html", error="Incorrect password")
 
+    # Success
     token = str(uuid.uuid4())
-
     hashed = hash_token(token)
     user_collection.update_one({"username": user}, {"$set": {"auth_token": hashed}})
+    logging.info(f"Login successful: user '{user}'")
 
     resp = make_response(redirect("/lobby"))
     resp.set_cookie("auth_token", token, httponly=True, max_age=3600)
@@ -75,14 +86,16 @@ def login():
 def logout():
     token = request.cookies.get("auth_token")
 
-    if token :
-        user_collection.update_one({"auth_token": hash_token(token)}, {"$unset" : {"auth_token": ""}})
-
+    if token:
+        hashed = hash_token(token)
+        user = user_collection.find_one({"auth_token": hashed})
+        if user:
+            logging.info(f"User '{user['username']}' logged out")
+            user_collection.update_one({"auth_token": hashed}, {"$unset": {"auth_token": ""}})
 
     resp = make_response(redirect("/"))
     resp.set_cookie("auth_token", '', expires=0)
     return resp
-
 
 def validate_password(string):
     if len(string) < 8:
@@ -118,8 +131,6 @@ def profile():
         return redirect(url_for('auth.login'))
 
     user = g.user
-
-
 
     if request.method == 'POST':
         file = request.files.get('avatar')
