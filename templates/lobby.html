@@ -117,7 +117,18 @@
       display: flex;
       justify-content: space-between;
     }
-
+    #toggleLeaderboard {
+  margin-top: 10px;
+  background-color: #3b82f6;
+  color: white;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+}
+#toggleLeaderboard:hover {
+  background-color: #2563eb;
+}
   </style>
 </head>
 <body>
@@ -167,6 +178,8 @@
       <div class="leaderboard">
         <h2>🏆 Leaderboard</h2>
         <ul id="leaderboardList"></ul>
+          <ul id="leaderboardList"></ul>
+        <button id="toggleLeaderboard" onclick="toggleLeaderboard()">Show More</button>
       </div>
 
     </div> <!-- End of .lobby-wrapper -->
@@ -195,24 +208,46 @@
  socket.on('leaderboard_updated', () => {
   loadLeaderboard();  // ⬅️ this is the function you already defined earlier
 });
+let leaderboardExpanded = false;
+let fullLeaderboardData = [];
 
-// Load leaderboard on page load
 function loadLeaderboard() {
   fetch('/api/leaderboard')
     .then(res => res.json())
     .then(data => {
-      const lbList = document.getElementById('leaderboardList');
-      lbList.innerHTML = '';
-      data.forEach((p, i) => {
-        const li = document.createElement('li');
-        li.innerHTML = `<span>${i + 1}. ${p.username}</span><span>${p.wins} wins</span>`;
-        lbList.appendChild(li);
-      });
+        console.log("Fetched leaderboard data:", data);  // ✅ Debug
+
+      fullLeaderboardData = data;
+      renderLeaderboard();
     });
 }
 
-loadLeaderboard();  // 👈 Call it once when the page loads
+function renderLeaderboard() {
+  const lbList = document.getElementById('leaderboardList');
+  const toggleBtn = document.getElementById('toggleLeaderboard');
+  lbList.innerHTML = '';
 
+  const dataToShow = leaderboardExpanded ? fullLeaderboardData : fullLeaderboardData.slice(0, 5);
+
+  dataToShow.forEach((p, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span>${i + 1}. ${p.username}</span><span>${p.wins} wins</span>`;
+    lbList.appendChild(li);
+  });
+
+  if (fullLeaderboardData.length <= 5) {
+    toggleBtn.style.display = 'none';
+  } else {
+    toggleBtn.style.display = 'block';
+    toggleBtn.textContent = leaderboardExpanded ? 'Show Less' : 'Show More';
+  }
+}
+
+function toggleLeaderboard() {
+  leaderboardExpanded = !leaderboardExpanded;
+  renderLeaderboard();
+}
+loadLeaderboard()
 
     function createRoom() {
       const roomName = document.getElementById('roomName').value.trim();

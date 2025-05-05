@@ -166,11 +166,14 @@ def whoami():
 
 @auth_bp.route('/api/leaderboard')
 def leaderboard():
-    players = list(user_collection.find({}, {"username": 1, "wins": 1}).sort("wins", -1))
-    return jsonify([
-        {
-            "username": u["username"],
-            "wins": u.get("wins", 0)
-        }
-        for u in players
-    ])
+    # Fetch all users
+    users = list(user_collection.find({}, {"_id": 0, "username": 1, "wins": 1}))
+
+    # Add default 0 for missing 'wins' field
+    for u in users:
+        u["wins"] = u.get("wins", 0)
+
+    # Sort in Python instead of MongoDB
+    sorted_users = sorted(users, key=lambda u: u["wins"], reverse=True)
+
+    return jsonify(sorted_users)
