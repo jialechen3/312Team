@@ -6,3 +6,5 @@ eventlet>=0.33.0
 pymongo~=4.11.3
 bcrypt~=4.3.0
 app~=0.0.1
+gevent>=24.2.1
+gevent-websocket>=0.10.1

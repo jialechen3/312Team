@@ -137,7 +137,11 @@ let roundTimeLeft = 0;
 let roundTimerId = null;
 let bannerHideTimer = null;
 
-let playerId = null, players = {}, deadPlayers = {}, respawnTimers = {}, pos = { x: 0.0, y: 0.0 };
+let playerId = null,
+    players = {},
+    deadPlayers = {},
+    respawnTimers = {},
+    pos = { x: 0.0, y: 0.0 };
 
 function flashNumber(txt) {
   roundBanner.textContent = txt;
@@ -183,48 +187,54 @@ let terrain = Array.from({ length: MAP_HEIGHT }, () => Array(MAP_WIDTH).fill(0))
 
 
 socket.on('player_positions', list => {
-  players = {};
   list.forEach(p => {
-    players[p.id] = p;
+    const obj = players[p.id] || {};
+
+    // keep existing position if we already have one, else start at server point
+    obj.x = obj.x ?? p.x;
+    obj.y = obj.y ?? p.y;
+
+    // authoritative goal sent by the server
+    obj.targetX = p.x;
+    obj.targetY = p.y;
+
+    obj.team   = p.team;
+    obj.avatar = p.avatar;
+
+    players[p.id] = obj;          // put back into the plain object
+
+    // avatar image cache (unchanged)
     const src = p.avatar;
-    if (src) {
-      if (!avatarCache[src] && !avatarFailed[src]) {
-        const img = new Image();
-        img.onload = () => draw();
-        img.onerror = () => { avatarFailed[src] = true; draw(); };
-        img.src = '/static/avatars/' + src;
-        avatarCache[src] = img;
-      }
+    if (src && !avatarCache[src] && !avatarFailed[src]) {
+      const img = new Image();
+      img.onerror = () => { avatarFailed[src] = true; };
+      img.src = '/static/avatars/' + src;
+      avatarCache[src] = img;
     }
   });
 
+  /* ---------- HUD updates ---------- */
   if (players[playerId]) {
-    pos = { x: players[playerId].x, y: players[playerId].y };
-    // 🆕 Update teamSmall
-    const myTeam = players[playerId].team;
+    const me = players[playerId];
+    pos = { x: me.targetX, y: me.targetY };
+
+    const myTeam = me.team;
     teamSmall.textContent = `Team: ${myTeam ? myTeam.toUpperCase() : '--'}`;
-    teamSmall.style.color = myTeam === 'red' ? '#ff5050' :
-                             myTeam === 'blue' ? '#4ea1ff' :
-                             '#ffffff';
+    teamSmall.style.color = myTeam === 'red'  ? '#ff5050'
+                           : myTeam === 'blue' ? '#4ea1ff'
+                           : '#ffffff';
   }
 
-  redLiveEl.textContent = list.filter(p => p.team === 'red').length;
+  redLiveEl.textContent  = list.filter(p => p.team === 'red').length;
   blueLiveEl.textContent = list.filter(p => p.team === 'blue').length;
-  draw();
-  drawMinimap(players);
 });
+
 socket.on('player_moved', data => {
   const { id, x, y } = data;
-
   if (players[id]) {
-    players[id].x = x;
-    players[id].y = y;
-
-    if (id === playerId) {
-      pos = { x, y };  // Update local player's position
-    }
-
-    draw();
+    players[id].targetX = x;
+    players[id].targetY = y;
+    if (id === playerId) pos = { x, y };
   }
 });
 
@@ -291,7 +301,7 @@ fetch('/api/whoami', { credentials: 'include' })
     if (!d.username) { location = '/login'; return; }
     playerId = d.username;
     socket.emit('join_room', { room_id: roomId, player: playerId });
-    setInterval(draw, 1000 / 60);
+    {#setInterval(draw, 1000 / 60);#}
   });
 
 const keyState = {
@@ -315,16 +325,14 @@ document.addEventListener('keyup', e => {
   }
 });
 
-function gameLoop() {
+function inputLoop() {
   if (Object.values(keyState).includes(true)) {
-    movePlayer();  // Call movePlayer if any key is pressed
+    movePlayer();
   }
-
-  requestAnimationFrame(gameLoop);  // Call gameLoop again for the next frame
+  requestAnimationFrame(inputLoop);
 }
-
-// Start the game loop
-gameLoop();
+// start it
+inputLoop();
 
 function movePlayer() {
   let new_x = pos.x;
@@ -481,6 +489,33 @@ function drawMinimapTerrain() {
     }
   }
 }
+
+let lastFrame = 0;
+function gameLoop(ts) {
+  const dt = (ts - lastFrame) / 1000;
+  lastFrame = ts;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const vx = Math.max(0, Math.min(pos.x - canvas.width / 80,  MAP_WIDTH  - canvas.width  / TILE_SIZE));
+  const vy = Math.max(0, Math.min(pos.y - canvas.height / 80, MAP_HEIGHT - canvas.height / TILE_SIZE));
+
+  drawGrid(vx, vy);
+
+  for (const id in players) {
+    const p = players[id];
+    const lerp = 12 * dt;
+    p.x += (p.targetX - p.x) * lerp;
+    p.y += (p.targetY - p.y) * lerp;
+  }
+
+  drawPlayers(vx, vy);
+  drawMinimap(players);   // ← no Object.fromEntries
+
+  requestAnimationFrame(gameLoop);
+}
+requestAnimationFrame(gameLoop);
+
+
 
 
 </script>

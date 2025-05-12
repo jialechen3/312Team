@@ -1,5 +1,4 @@
-import eventlet
-eventlet.monkey_patch()
+
 import hashlib
 import os
 import logging
@@ -14,7 +13,22 @@ from util.database import user_collection, room_collection
 from util.rooms import register_room_handlers
 
 app = Flask(__name__)
-socketio = SocketIO(app, async_mode='eventlet')
+try:
+    # Prefer gevent because it works on both Python 3.11 and 3.12
+    from gevent import monkey; monkey.patch_all()
+    async_mode = "gevent"
+except ImportError:            # fallback if gevent isn't installed
+    import eventlet; eventlet.monkey_patch()
+    async_mode = "eventlet"
+
+socketio = SocketIO(
+    app,
+    async_mode=async_mode,
+    cors_allowed_origins="*",   # optional: silences CORS warnings
+    ping_interval=20,           # reasonable keep-alive defaults
+    ping_timeout=10
+)
+
 @app.context_processor
 def inject_user():
     return dict(current_user=g.user)
