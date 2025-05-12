@@ -178,7 +178,7 @@ function paintCorner() {
 const roomId = new URLSearchParams(location.search).get('room');
 if (!roomId) { alert('Room ID missing'); throw new Error('No room id'); }
 
-const TILE_SIZE = 40.0, MAP_WIDTH = 50.0, MAP_HEIGHT = 50.0;
+const TILE_SIZE = 40.0, MAP_WIDTH = 30.0, MAP_HEIGHT = 20.0;
 let terrain = Array.from({ length: MAP_HEIGHT }, () => Array(MAP_WIDTH).fill(0));
 
 

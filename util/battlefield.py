@@ -7,8 +7,8 @@ import math
 from util.rooms import choose_avatar
 
 # Constants for map size
-MAP_WIDTH = 50
-MAP_HEIGHT = 50
+MAP_WIDTH = 30
+MAP_HEIGHT = 20
 
 terrain = [[0 for _ in range(MAP_WIDTH)] for _ in range(MAP_HEIGHT)]
 
