@@ -23,6 +23,19 @@ def choose_avatar(username, room_doc, user_doc):
     if username in room_doc["blue_team"]:
         return "defaultBlueTeamPNG.png"
 
+def enrich_with_avatars(room_doc, user_coll):
+    """
+    Return a fresh list of player dicts, each with an .avatar key that is
+    **just the filename** (no /static/ prefix).  Front-end prepends that.
+    """
+    players_out = []
+    for p in room_doc.get("players", []):
+        uid       = p["id"]
+        user_doc  = user_coll.find_one({"username": uid}) or {}
+        avatar_fn = choose_avatar(uid, room_doc, user_doc)
+        players_out.append({**p, "avatar": avatar_fn})
+    return players_out
+
 
 def register_room_handlers(socketio, user_collection, room_collection):
 
@@ -284,7 +297,7 @@ def register_room_handlers(socketio, user_collection, room_collection):
                 "x": p["x"],
                 "y": p["y"],
                 "team": p.get("team"),
-                "avatar": f"/static/avatars/{avatar_fn}"
+                "avatar": avatar_fn
             })
 
         all_rooms = [

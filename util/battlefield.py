@@ -4,7 +4,9 @@ from util.auth import hash_token
 from eventlet import sleep
 from eventlet.semaphore import Semaphore
 import math
-from util.rooms import choose_avatar
+
+from util.database import user_collection
+from util.rooms import choose_avatar, enrich_with_avatars
 
 # Constants for map size
 MAP_WIDTH = 30
@@ -246,7 +248,8 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
         if not updated_room:
             return
 
-        emit('player_positions', updated_room.get('players', []), room=request.sid, namespace='/battlefield')
+        players_out = enrich_with_avatars(updated_room, user_collection)
+        emit('player_positions', players_out, namespace='/battlefield')
 
 
 def respawn_player(socketio, room_collection, room_id, player):
@@ -274,7 +277,8 @@ def respawn_player(socketio, room_collection, room_id, player):
         {"$set": {"players.$.team": new_team}}
     )
     updated_room = room_collection.find_one({"id": room_id})
-    socketio.emit('player_positions', updated_room.get('players', []), room=room_id, namespace='/battlefield')
+    players_out = enrich_with_avatars(updated_room, user_collection)
+    socketio.emit('player_positions',players_out,room = room_id, namespace = '/battlefield')
 
     # Mark as alive
     with player_status_lock:
