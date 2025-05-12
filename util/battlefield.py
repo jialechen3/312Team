@@ -25,9 +25,13 @@ for y in range(MAP_HEIGHT):
 
 # Global memory
 room_player_data = {}  # { room_id: { player_name: {"x": int, "y": int, "team": str} } }
-player_status = {}     # { room_id: { player_name: "alive" or "dead", dx: -2.0 - 2.0, dy: -2.0 - 2.0} }
+player_status = {}     # { room_id: { player_name: "alive" or "dead", x: x coord, y: y coord } }
 room_player_data_lock = Semaphore()
 player_status_lock = Semaphore()
+
+room_cache = {}        # { room_id: full_room_doc }
+terrain_cache = {}     # { room_id: terrain 2D array }
+room_cache_lock = Semaphore()
 
 def register_battlefield_handlers(socketio, user_collection, room_collection):
 
@@ -44,22 +48,21 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
             join_room(room_id)
 
             # 🔥 Immediately emit the current player positions after joining
-            room = room_collection.find_one({"id": room_id})
+            room = get_room(room_id, room_collection)
             if not room:
                 return
 
             players = room.get('players', [])
             updated_players = []
 
-            room_doc = room_collection.find_one({"id": room_id})
-
             for p in players:
                 user_doc = user_collection.find_one({"username": p["id"]})
-                p["avatar"] = choose_avatar(p["id"], room_doc, user_doc)
+                p["avatar"] = choose_avatar(p["id"], room, user_doc)
                 updated_players.append(p)
 
+            refresh_room_player_data(room_id,room)
             emit('player_positions', updated_players, room=request.sid, namespace='/battlefield')
-            terrain_data = room.get('terrain')
+            terrain_data = terrain_cache.get(room_id)
             if terrain_data:
                 emit('load_terrain', {'terrain': terrain_data}, room=request.sid, namespace='/battlefield')
 
@@ -72,24 +75,30 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
         if not room_id or not player or not keyPress:
             return
 
-        room = room_collection.find_one({'id': room_id})
+        room = get_room(room_id, room_collection)
         if not room:
             return
 
         # fetch once
-        terrain = room.get('terrain', [[0] * MAP_WIDTH for _ in range(MAP_HEIGHT)])
+        '''terrain = room.get('terrain', [[0] * MAP_WIDTH for _ in range(MAP_HEIGHT)])
         player_list = room.get('players', [])
         player_data = next((p for p in player_list if p['id'] == player), None)
         if not player_data:
-            return
+            return'''
 
         with player_status_lock:
             if player_status.get(room_id, {}).get(player, {}).get('status') == "dead":
                 return
 
+        with room_player_data_lock:
+            pdata = room_player_data.get(room_id, {}).get(player)
+            if not pdata:
+                return
+            new_x, new_y = pdata['x'], pdata['y']
+
 
         # movement logic
-        new_x, new_y = player_data['x'], player_data['y']
+        #new_x, new_y = player_data['x'], player_data['y']
         if keyPress['ArrowUp']:
             new_y = round((new_y - 0.1)*100)/100
         if keyPress['ArrowDown']:
@@ -109,77 +118,69 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
         if x_check and y_check:
             return
 
+        terrain = terrain_cache.get(room_id)
+        if not terrain:
+            return
+
         f_new_x = math.floor(new_x)
         c_new_x = math.ceil(new_x) if new_x % 1 != 0 else f_new_x
         f_new_y = math.floor(new_y)
         c_new_y = math.ceil(new_y) if new_y % 1 != 0 else f_new_y
+
+
 
         tileTL = terrain[f_new_y][f_new_x]
         tileTR = terrain[f_new_y][c_new_x]
         tileBL = terrain[c_new_y][f_new_x]
         tileBR = terrain[c_new_y][c_new_x]
 
-        old_x = new_x
-        enemy_team_num = 3 if player_data.get('team') == 'blue' else 2
+        #old_x = new_x
+        enemy_team_num = 3 if pdata.get('team') == 'blue' else 2
 
-        if new_x != player_data['x'] and f_new_x != c_new_x:
-            if new_x < player_data['x']:
+        if new_x != pdata['x'] and f_new_x != c_new_x:
+            if new_x < pdata['x']:
                 if (tileTL in (1, enemy_team_num)) or (tileBL in (1, enemy_team_num)):
-                    new_x = player_data['x']
-            elif new_x > player_data['x']:
+                    new_x = pdata['x']
+            elif new_x > pdata['x']:
                 if (tileTR in (1, enemy_team_num)) or (tileBR in (1, enemy_team_num)):
-                    new_x = player_data['x']
+                    new_x = pdata['x']
 
-        if new_y != player_data['y'] and f_new_y != c_new_y:
-            if new_y > player_data['y']:
+        if new_y != pdata['y'] and f_new_y != c_new_y:
+            if new_y > pdata['y']:
                 if (tileBL in (1, enemy_team_num)) or (tileBR in (1, enemy_team_num)):
-                    new_y = player_data['y']
-            elif new_y < player_data['y']:
+                    new_y = pdata['y']
+            elif new_y < pdata['y']:
                 if (tileTL in (1, enemy_team_num)) or (tileTR in (1, enemy_team_num)):
-                    new_y = player_data['y']
+                    new_y = pdata['y']
 
-        result = room_collection.update_one(
-            {'id': room_id, 'players.id': player},
-            {'$set': {'players.$.x': new_x, 'players.$.y': new_y}}
-        )
-        if result.matched_count == 0:
-            return
+        if new_x != pdata['x'] or new_y != pdata['y']:
+            room_collection.update_one(
+                {'id': room_id, 'players.id': player},
+                {'$set': {'players.$.x': new_x, 'players.$.y': new_y}}
+            )
+            invalidate_room_cache(room_id)
+            updated_room = get_room(room_id, room_collection)
+            refresh_room_player_data(room_id, updated_room)
 
-        # update in-memory and enrich with avatars
-        user_cache = {}
-        for p in room['players']:
-            pid = p['id']
-            if pid not in user_cache:
-                user_cache[pid] = user_collection.find_one({"username": pid}) or {}
-            p['avatar'] = choose_avatar(pid, room, user_cache[pid])
+            emit('player_moved', {'id': player, 'x': new_x, 'y': new_y}, room=room_id, namespace='/battlefield')
 
-        with room_player_data_lock:
-            room_player_data[room_id] = {
-                p['id']: {'x': p['x'], 'y': p['y']}
-                for p in room['players'] if p.get('id')
-            }
-
-
-        # tagging logic
-        attacking_team = room.get('attacking_team')
-        if attacking_team:
-            with room_player_data_lock:
+            # tagging logic
+            attacking_team = updated_room.get('attacking_team')
+            if attacking_team:
                 for other_id, pos in room_player_data[room_id].items():
                     if other_id == player:
                         continue
                     if abs(pos['x'] - new_x) <= 1 and abs(pos['y'] - new_y) <= 1:
-                        target_data = next((p for p in room['players'] if p['id'] == other_id), None)
-                        if not target_data:
+                        target = next((p for p in room['players'] if p['id'] == other_id), None)
+                        if not target:
                             continue
 
-                        mover_team = player_data.get('team')
-                        target_team = target_data.get('team')
-                        if mover_team == target_team:
+                        if pdata['team'] == target['team']:
                             continue
 
-                        if mover_team == attacking_team:
+                        if pdata['team'] == attacking_team:
                             victim, tagger = other_id, player
-                        elif target_team == attacking_team:
+                        elif target['team'] == attacking_team:
                             victim, tagger = player, other_id
                         else:
                             continue
@@ -192,12 +193,9 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
                         socketio.start_background_task(respawn_player, socketio, room_collection, room_id, victim)
                         break
 
-        emit('player_moved', {'id': player, 'x': new_x, 'y': new_y}, room=room_id, namespace='/battlefield')
 
     @socketio.on('disconnect', namespace='/battlefield')
     def handle_battlefield_disconnect():
-        sid = request.sid
-
         auth_token = request.cookies.get('auth_token')
         if not auth_token:
             return
@@ -207,19 +205,17 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
             return
 
         username = user['username']
-
-
         rooms = list(room_collection.find({"players.id": username}))
 
-        for room in rooms:
-            room_id = room["id"]
-            room_collection.update_one(
-                {"id": room_id},
-                {"$pull": {"players": {"id": username}}
-            })
-
-            updated = room_collection.find_one({"id": room_id})
-            socketio.emit('player_left', {'id': username}, room=room_id, namespace='/battlefield')
+        for room_id, room in list(room_cache.items()):
+            if any(p['id'] == username for p in room.get('players', [])):
+                room_collection.update_one(
+                    {"id": room_id},
+                    {"$pull": {"players": {"id": username}}}
+                )
+                invalidate_room_cache(room_id)
+                socketio.emit('player_left', {'id': username}, room=room_id, namespace='/battlefield')
+                break
 
     #gives latest player info after respawn
     @socketio.on('request_positions', namespace='/battlefield')
@@ -227,38 +223,24 @@ def register_battlefield_handlers(socketio, user_collection, room_collection):
         auth_token = request.cookies.get('auth_token')
         if not auth_token:
             return
-
         user = user_collection.find_one({'auth_token': hash_token(auth_token)})
         if not user:
             return
-
         username = user['username']
-
-        # Find the room the user is in and get the latest full document
-        room = room_collection.find_one({"players.id": username})
-        if not room:
-            return
-
-        room_id = room['id']
-        
-        # Now re-fetch the full room document by its id to ensure up-to-date player list
-        updated_room = room_collection.find_one({"id": room_id})
-        if not updated_room:
-            return
-
-        emit('player_positions', updated_room.get('players', []), room=request.sid, namespace='/battlefield')
+        for room_id, players in room_player_data.items():
+            if username in players:
+                room = get_room(room_id, room_collection)
+                if room:
+                    emit('player_positions', room.get('players', []), room=request.sid, namespace='/battlefield')
+                break
 
 
 def respawn_player(socketio, room_collection, room_id, player):
-    sleep(5)  # 5 seconds dead
-
+    sleep(5)
     with player_status_lock:
-        if room_id not in player_status or player not in player_status[room_id]:
-            return
-        tagger = player_status[room_id][player].get('tagger')
+        tagger = player_status.get(room_id, {}).get(player, {}).get('tagger')
 
-    # Fetch the tagger's team
-    room = room_collection.find_one({'id': room_id})
+    room = get_room(room_id, room_collection)
     if not room:
         return
 
@@ -267,22 +249,18 @@ def respawn_player(socketio, room_collection, room_id, player):
         return
 
     new_team = tagger_data['team']
-
-    # Update the player's team in database
     room_collection.update_one(
         {"id": room_id, "players.id": player},
         {"$set": {"players.$.team": new_team}}
     )
-    updated_room = room_collection.find_one({"id": room_id})
-    socketio.emit('player_positions', updated_room.get('players', []), room=room_id, namespace='/battlefield')
+    invalidate_room_cache(room_id)
+    updated_room = get_room(room_id, room_collection)
+    refresh_room_player_data(room_id, updated_room)
 
-    # Mark as alive
     with player_status_lock:
-        player_status[room_id][player] = {
-            "status": "alive"
-        }
+        player_status[room_id][player] = {"status": "alive"}
 
-    # Tell clients
+    socketio.emit('player_positions', updated_room.get('players', []), room=room_id, namespace='/battlefield')
     socketio.emit('player_respawned', {"player": player}, room=room_id, namespace='/battlefield')
 
 
@@ -298,3 +276,27 @@ def battlefield():
 
 def clamp(value, min_value, max_value):
     return max(min_value, min(value, max_value))
+
+def get_room(room_id, room_collection):
+    with room_cache_lock:
+        if room_id in room_cache:
+            return room_cache[room_id]
+        room = room_collection.find_one({"id": room_id})
+        if room:
+            room_cache[room_id] = room
+            if "terrain" in room:
+                terrain_cache[room_id] = room["terrain"]
+        return room
+
+def refresh_room_player_data(room_id, room):
+    with room_player_data_lock:
+        room_player_data[room_id] = {
+            p['id']: {"x": p['x'], "y": p['y'], "team": p.get('team')} for p in room.get("players", [])
+        }
+
+def invalidate_room_cache(room_id):
+    with room_cache_lock:
+        if room_id in room_cache:
+            del room_cache[room_id]
+        if room_id in terrain_cache:
+            del terrain_cache[room_id]
