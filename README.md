@@ -21,7 +21,7 @@ Other branches are outdated or experimental.
 To deploy the production version, checkout the deploy-3.0 branch.
 
 The deployed domain is:
-👉 https://jchen544.cse312.dev
+👉 (https://poker-gods.cse312.dev/)
 
 🕹️ How to Play
 Create your own lobby.
